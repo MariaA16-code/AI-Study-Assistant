@@ -49,13 +49,15 @@ DIFFICULTY_GUIDE = {
         "to a new situation. The answer must still follow from the passage alone."
     ),
 }
-
 _KIND_RULES = {
     "mcq": (
         "Write multiple-choice questions. Each has exactly 4 options and exactly one "
-        "correct option. Distractors must be plausible but clearly wrong according to "
-        'the passage. Never use "all of the above", "none of the above" or "both A and B". '
-        "Keep the options similar in length.",
+        "correct option. The three wrong options must be believable distractors about "
+        "the SAME topic as the question: common misconceptions, or details that sound "
+        "right but contradict the passage. Never borrow facts from other passages, and "
+        "never use an option that is obviously unrelated to the question. "
+        'Never use "all of the above", "none of the above" or "both A and B". '
+        "Keep the options similar in length and style.",
         '{"passage": 1, "question": "...", "options": ["...", "...", "...", "..."], '
         '"correct_index": 0, "explanation": "one or two sentences using the passage"}',
     ),
@@ -69,7 +71,6 @@ _KIND_RULES = {
         '{"passage": 1, "question": "...", "model_answer": "a thorough paragraph"}',
     ),
 }
-
 
 def build_generate_prompt(kind: str, difficulty: str, passages: list[dict], n: int) -> str:
     rules, shape = _KIND_RULES[kind]
