@@ -15,13 +15,13 @@ class LLMError(Exception):
     """Raised when every provider failed."""
 
 
-def _call_gemini(prompt: str, system: str | None) -> str:
+def _call_gemini(prompt: str, system: str | None, timeout: int) -> str:
     from google import genai
     from google.genai import types
 
     client = genai.Client(
         api_key=settings.GEMINI_API_KEY,
-        http_options=types.HttpOptions(timeout=settings.LLM_TIMEOUT * 1000),
+        http_options=types.HttpOptions(timeout=timeout * 1000),
     )
     cfg = types.GenerateContentConfig(system_instruction=system) if system else None
     resp = client.models.generate_content(
@@ -30,12 +30,12 @@ def _call_gemini(prompt: str, system: str | None) -> str:
     return resp.text or ""
 
 
-def _call_groq(prompt: str, system: str | None) -> str:
+def _call_groq(prompt: str, system: str | None, timeout: int) -> str:
     from groq import Groq
 
     client = Groq(
         api_key=settings.GROQ_API_KEY,
-        timeout=float(settings.LLM_TIMEOUT),
+        timeout=float(timeout),
         max_retries=0,
     )
     messages = []
@@ -50,6 +50,7 @@ def _call_groq(prompt: str, system: str | None) -> str:
 
 _PROVIDERS = {"gemini": _call_gemini, "groq": _call_groq}
 
+
 def _is_retryable(exc: Exception) -> bool:
     text = str(exc).lower()
     return any(
@@ -58,7 +59,14 @@ def _is_retryable(exc: Exception) -> bool:
                   "502", "503", "504", "empty reply")
     )
 
-def ask_llm(prompt: str, system: str | None = None, retries: int = 1) -> str:
+
+def ask_llm(
+    prompt: str,
+    system: str | None = None,
+    retries: int = 1,
+    timeout: int | None = None,
+) -> str:
+    timeout = timeout or settings.LLM_TIMEOUT
     primary = settings.LLM_PROVIDER.lower()
     if primary not in _PROVIDERS:
         raise LLMError(f"Unknown LLM_PROVIDER '{primary}'. Use 'gemini' or 'groq'.")
@@ -68,7 +76,7 @@ def ask_llm(prompt: str, system: str | None = None, retries: int = 1) -> str:
     for name in order:
         for attempt in range(retries + 1):
             try:
-                text = _PROVIDERS[name](prompt, system)
+                text = _PROVIDERS[name](prompt, system, timeout)
                 if text.strip():
                     return text
                 raise ValueError("empty reply")

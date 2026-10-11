@@ -21,3 +21,34 @@ def stored_doc(fresh_store):
     ]
     fresh_store.store_chunks(1, chunks)
     return 1
+CHUNK_A = (
+    "Photosynthesis is the process by which green plants make their own food. "
+    "Chlorophyll in the leaves absorbs sunlight, and the plant uses that energy to turn "
+    "water from the soil and carbon dioxide from the air into glucose and oxygen. "
+    "The oxygen is released into the air through tiny pores called stomata."
+)
+CHUNK_B = (
+    "Mitochondria are the organelles that release energy inside animal and plant cells. "
+    "They break down glucose in a process called cellular respiration, and the energy "
+    "released is stored in molecules of ATP. Cells with a high energy demand, such as "
+    "muscle cells, contain many mitochondria."
+)
+CHUNK_C = (
+    "The nucleus is the control centre of the cell. It contains the DNA that carries "
+    "genetic instructions and it is surrounded by a double membrane called the nuclear "
+    "envelope. Messages leave the nucleus through small pores, and they direct the "
+    "production of proteins in the cytoplasm of the cell."
+)
+
+
+@pytest.fixture
+def big_doc(fresh_store):
+    fresh_store.store_chunks(
+        2,
+        [
+            Chunk(0, CHUNK_A, 1, 1, "Chapter 1 Plants"),
+            Chunk(1, CHUNK_B, 2, 2, "Chapter 2 Cells"),
+            Chunk(2, CHUNK_C, 3, 3, "Chapter 2 Cells"),
+        ],
+    )
+    return 2

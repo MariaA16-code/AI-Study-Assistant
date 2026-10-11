@@ -15,3 +15,5 @@ CHROMA_DIR = config("CHROMA_DIR", default=str(PROJECT_ROOT / "chroma_db"))
 EMBED_MODEL = config("EMBED_MODEL", default="BAAI/bge-small-en-v1.5")
 MIN_SCORE = config("MIN_SCORE", default=0.50, cast=float)
 TOP_K = config("TOP_K", default=5, cast=int)
+GEN_TIMEOUT = config("GEN_TIMEOUT", default=60, cast=int)  # seconds per generation call
+MAX_QUESTIONS = config("MAX_QUESTIONS", default=20, cast=int)

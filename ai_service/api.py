@@ -70,17 +70,34 @@ def generate_questions(
     document_id: int,
     question_type: str,  # "mcq" | "short" | "long" | "mixed"
     difficulty: str,  # "low" | "medium" | "high"
-    count: int,
-    chapter: str | None = None,
-) -> list[dict]:
-    """Generate validated questions from the document (still a stub).
+    count: int,  # 1..20
+    chapter: str | None = None,  # one of the strings from list_chapters()
+) -> dict:
+    """Generate validated questions from the document.
 
+    Returns: {
+        "questions": [item, ...],       # can be FEWER than requested
+        "requested": int,
+        "warnings": [str],              # show these to the user
+        "error": "llm_unavailable" | "chapter_not_found" | "no_content"  # only if nothing came back
+    }
     MCQ item: {"type": "mcq", "question": str, "options": [4 strings],
-               "correct_index": int, "explanation": str, "source": {...}}
+               "correct_index": int, "explanation": str, "difficulty": str,
+               "source": {"chapter": str | None, "page": int, "page_end": int, "snippet": str}}
     Written item: {"type": "short" | "long", "question": str,
-                   "model_answer": str, "source": {...}}
+                   "model_answer": str, "difficulty": str, "source": {...}}
+    Raises ValueError for an invalid type, difficulty or count (validate before calling).
     """
-    return []
+    from .generate import generate
+
+    return generate(document_id, question_type, difficulty, count, chapter)
+
+
+def list_chapters(document_id: int) -> list[str]:
+    """Chapter names found in the document, in order (for the chapter dropdown)."""
+    from .generate import list_chapters as _list
+
+    return _list(document_id)
 
 
 def delete_document(document_id: int) -> None:
