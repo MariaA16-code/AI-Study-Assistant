@@ -13,3 +13,5 @@ GROQ_MODEL = config("GROQ_MODEL", default="openai/gpt-oss-120b")
 LLM_TIMEOUT = config("LLM_TIMEOUT", default=30, cast=int)  # seconds
 CHROMA_DIR = config("CHROMA_DIR", default=str(PROJECT_ROOT / "chroma_db"))
 EMBED_MODEL = config("EMBED_MODEL", default="BAAI/bge-small-en-v1.5")
+MIN_SCORE = config("MIN_SCORE", default=0.50, cast=float)
+TOP_K = config("TOP_K", default=5, cast=int)
