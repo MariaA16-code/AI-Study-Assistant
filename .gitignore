@@ -1,0 +1,9 @@
+.env
+venv/
+node_modules/
+chroma_db/
+media/
+__pycache__/
+*.pyc
+db.sqlite3
+.pytest_cache/

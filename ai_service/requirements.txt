@@ -1,0 +1,9 @@
+   fastembed
+   chromadb
+   rank_bm25
+   pdfplumber
+   python-docx
+   google-genai
+   groq
+   python-decouple
+   pytest
