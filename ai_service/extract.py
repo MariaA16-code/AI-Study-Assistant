@@ -5,12 +5,21 @@ from pathlib import Path
 
 PAGE_CHARS = 3000  # DOCX/TXT have no real pages, so we make ~3000-char sections
 CHAPTER_RE = re.compile(r"^(chapter|unit|lesson)\s+(\d+|[ivxlc]+)\b", re.IGNORECASE)
-TOC_RE = re.compile(r"(\.\s?){4,}")  # dot leaders like "Chapter 1 ...... 5"
+# Table-of-contents entries: dot leaders, or a page number after a tab / 2+ spaces
+TOC_RE = re.compile(
+    r"(\.\s?){4,}|(\t| {2,})\s*(\d+|[ivxlcdm]+)\s*$", re.IGNORECASE
+)
+_BARE_HEADING_RE = re.compile(r"(chapter|unit|lesson)\s+(\d+|[ivxlc]+)\.?", re.IGNORECASE)
 
 
 def _is_chapter_line(line: str) -> bool:
-    return bool(CHAPTER_RE.match(line)) and not TOC_RE.search(line)
-
+    line = line.strip()
+    if not CHAPTER_RE.match(line) or TOC_RE.search(line):
+        return False
+    if _BARE_HEADING_RE.fullmatch(line):  # just "Chapter 3" or "Chapter 3."
+        return True
+    # a heading is short and does not read like a sentence
+    return len(line) <= 80 and not line.endswith((".", "!", "?", ":"))
 
 @dataclass
 class Page:
@@ -108,7 +117,8 @@ def _read_docx(path: Path) -> tuple[list[Page], list[str]]:
 
 def _read_txt(path: Path) -> tuple[list[Page], list[str]]:
     raw = path.read_text(encoding="utf-8", errors="replace")
-    items = [(p.strip(), False) for p in re.split(r"\n\s*\n", raw) if p.strip()]
+    # one item per line, so headings are found even without blank lines around them
+    items = [(line.strip(), False) for line in raw.splitlines() if line.strip()]
     warnings = ["TXT has no fixed pages; page numbers are approximate sections."]
     return _paragraphs_to_pages(items), warnings
 
