@@ -40,3 +40,15 @@ def test_tiny_text_is_dropped():
 def test_toc_lines_are_dropped():
     toc = "Chapter 1 Intro ............ 5\nChapter 2 Cells ............ 9"
     assert chunk_pages([Page(1, toc, None)]) == []
+
+def test_table_row_with_trailing_number_is_kept():
+    text = "Results of the load test are shown below. " * 3 + "Response time under load  200"
+    chunks = chunk_pages([Page(1, text, None)])
+    assert any("Response time under load" in c.text for c in chunks)  
+
+def test_contents_style_lines_are_dropped():
+    toc = (
+        "Bug Resolution\t32\nREFERENCES\t42\n"
+        "Figure 4.1: System Architecture ………………\nLIST OF FIGURES\tviii"
+    )
+    assert chunk_pages([Page(1, toc, None)]) == []    

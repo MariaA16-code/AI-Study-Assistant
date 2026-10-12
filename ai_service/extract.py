@@ -5,9 +5,12 @@ from pathlib import Path
 
 PAGE_CHARS = 3000  # DOCX/TXT have no real pages, so we make ~3000-char sections
 CHAPTER_RE = re.compile(r"^(chapter|unit|lesson)\s+(\d+|[ivxlc]+)\b", re.IGNORECASE)
-# Table-of-contents entries: dot leaders, or a page number after a tab / 2+ spaces
+# Table-of-contents entries: dot leaders, or a chapter/section entry ending in a page number
 TOC_RE = re.compile(
-    r"(\.\s?){4,}|(\t| {2,})\s*(\d+|[ivxlcdm]+)\s*$", re.IGNORECASE
+    r"([.…·]\s?){4,}"  # leaders like ...... or ………
+    r"|^\s*((chapter|unit|lesson)\s+\w+|\d+(\.\d+)+)\b.*(\t| {2,})\s*(\d+|[ivxlc]+)\s*$"
+    r"|^[^\t]{2,80}\t\s*(\d{1,3}|[ivxlc]{1,6})\s*$",  # short line, tab, page number
+    re.IGNORECASE,
 )
 _BARE_HEADING_RE = re.compile(r"(chapter|unit|lesson)\s+(\d+|[ivxlc]+)\.?", re.IGNORECASE)
 
@@ -84,7 +87,7 @@ def _paragraphs_to_pages(items: list[tuple[str, bool]]) -> list[Page]:
         buf, size = [], 0
 
     for text, is_heading in items:
-        if is_heading or _is_chapter_line(text):
+        if (is_heading and not TOC_RE.search(text)) or _is_chapter_line(text):
             flush()
             current = text[:80]
         if not buf:
