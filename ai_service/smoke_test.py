@@ -7,12 +7,13 @@ import sys
 import time
 
 from . import (
-    answer_question,
-    delete_document,
-    generate_questions,
-    list_chapters,
-    process_document,
-)
+       answer_question,
+       delete_document,
+       generate_questions,
+       list_chapters,
+       process_document,
+       summarize_document,
+   )
 
 DOC_ID = 9999
 
@@ -36,6 +37,15 @@ if res["status"] != "ready":
 step("list_chapters")
 chapters = list_chapters(DOC_ID)
 print(chapters)
+
+step("summarize_document")
+summ = summarize_document(DOC_ID)
+print("error:", summ.get("error"), "|", summ["summary"][:200])
+print("key points:", len(summ["key_points"]))
+
+step("answer_question (vague question)")
+vague = answer_question(DOC_ID, "What is this document about?")
+print("found:", vague["found"], "| mode:", vague.get("mode"))
 
 step("answer_question (answer is in the file)")
 ans = answer_question(DOC_ID, question)

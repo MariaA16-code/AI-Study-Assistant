@@ -63,9 +63,10 @@ def _is_retryable(exc: Exception) -> bool:
 def ask_llm(
     prompt: str,
     system: str | None = None,
-    retries: int = 1,
+    retries: int | None = None,
     timeout: int | None = None,
 ) -> str:
+    retries = settings.LLM_RETRIES if retries is None else retries
     timeout = timeout or settings.LLM_TIMEOUT
     primary = settings.LLM_PROVIDER.lower()
     if primary not in _PROVIDERS:
@@ -86,5 +87,6 @@ def ask_llm(
                 logger.warning(msg)
                 if not _is_retryable(exc):
                     break  # bad key, retired model, rate limit: next provider now
-                time.sleep(1)
+                if attempt < retries:
+                    time.sleep(settings.LLM_RETRY_DELAY * (attempt + 1))
     raise LLMError("All providers failed: " + " | ".join(errors))

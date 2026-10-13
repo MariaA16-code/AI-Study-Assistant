@@ -131,7 +131,10 @@ def _generate_kind(
         passages = _spread(pool, want, rng)
         prompt = build_generate_prompt(kind, difficulty, passages, want)
         try:
-            raw = ask_llm(prompt, system=SYSTEM_GENERATE, retries=0, timeout=settings.GEN_TIMEOUT)
+            raw = ask_llm(
+            prompt, system=SYSTEM_GENERATE,
+            retries=settings.GEN_RETRIES, timeout=settings.GEN_TIMEOUT,
+            )
         except LLMError as exc:
             logger.warning("LLM unavailable during generation: %s", exc)
             return items, "llm_unavailable"

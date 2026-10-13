@@ -4,6 +4,7 @@ from .api import (
     generate_questions,
     list_chapters,
     process_document,
+    summarize_document,
 )
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "answer_question",
     "generate_questions",
     "list_chapters",
+    "summarize_document",
     "delete_document",
 ]

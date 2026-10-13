@@ -16,6 +16,7 @@ def test_public_functions_exist():
         "generate_questions",
         "list_chapters",
         "delete_document",
+        "summarize_document",
     }
 
 
@@ -30,6 +31,7 @@ def test_signatures_are_stable():
     ]
     assert params(api.list_chapters) == ["document_id"]
     assert params(api.delete_document) == ["document_id"]
+    assert params(api.summarize_document) == ["document_id", "chapter"]
 
 
 def test_result_shapes_for_an_unknown_document(fresh_store):
@@ -62,3 +64,8 @@ def test_import_does_not_load_heavy_libraries():
         [sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True
     )
     assert out.stdout.strip() == "[]", out.stderr
+
+def test_summarize_shape_for_an_unknown_document(fresh_store):
+       res = api.summarize_document(404)
+       assert set(res) >= {"summary", "key_points", "chapter", "sources", "error"}
+       assert res["summary"] == "" and res["error"] == "no_content"

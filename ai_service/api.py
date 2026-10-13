@@ -60,7 +60,10 @@ def answer_question(document_id: int, question: str) -> dict:
                      "snippet": str}],
         "error": "llm_unavailable" | "bad_llm_output"   # only when something broke
     }
+        Overview questions ("what is this document about?", "summarize chapter 3") return a
+    summary with an extra key "mode": "summary".
     """
+
     from .answer import answer
 
     return answer(document_id, question)
@@ -98,6 +101,23 @@ def list_chapters(document_id: int) -> list[str]:
     from .generate import list_chapters as _list
 
     return _list(document_id)
+
+def summarize_document(document_id: int, chapter: str | None = None) -> dict:
+    """Summary of the whole document, or of one chapter (a string from list_chapters()).
+
+    Returns: {
+        "summary": str,
+        "key_points": [str],
+        "chapter": str | None,
+        "sources": [{"chapter": str | None, "page": int, "page_end": int, "snippet": str}],
+        "error": "llm_unavailable" | "bad_llm_output" | "chapter_not_found" | "no_content"
+            # "error" appears only when nothing could be produced
+    }
+    Takes 10 to 60 seconds, so run it in the background or show a loader.
+    """
+    from .summarize import summarize
+
+    return summarize(document_id, chapter)
 
 
 def delete_document(document_id: int) -> None:

@@ -3,10 +3,10 @@ import json
 import ai_service.answer as answer_module
 from ai_service import settings
 from ai_service.llm import LLMError
-
+import ai_service.summarize as summ
 
 def fake_llm(payload):
-    def _fake(prompt, system=None, retries=1):
+    def _fake(prompt, system=None, retries=1, timeout=None, **kwargs):
         return payload if isinstance(payload, str) else json.dumps(payload)
 
     return _fake
@@ -74,3 +74,28 @@ def test_parse_answer_variants():
     assert answer_module.parse_answer(fenced)["found"] is True
     assert answer_module.parse_answer('{"found": "false"}')["found"] is False
     assert answer_module.parse_answer("not json") is None
+
+
+def test_overview_question_routes_to_summary(big_doc, monkeypatch):
+    payload = {
+        "summary": "This material explains how plants make food and how cells release energy. " * 2,
+        "key_points": ["Plants make food", "Cells release energy"],
+    }
+    monkeypatch.setattr(summ, "ask_llm", fake_llm(payload))
+
+    def boom(*args, **kwargs):
+        raise AssertionError("the normal question path must not run")
+
+    monkeypatch.setattr(answer_module, "retrieve", boom)
+    res = answer_module.answer(big_doc, "What is this document about?")
+    assert res["found"] is True and res["mode"] == "summary"
+    assert "Key points" in res["answer"] and res["sources"]
+
+
+def test_overview_with_llm_down(big_doc, monkeypatch):
+    def down(*args, **kwargs):
+        raise LLMError("all providers failed")
+
+    monkeypatch.setattr(summ, "ask_llm", down)
+    res = answer_module.answer(big_doc, "Give me a summary of this document")
+    assert res["found"] is False and res["error"] == "llm_unavailable"
