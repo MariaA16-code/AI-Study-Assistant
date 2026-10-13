@@ -59,14 +59,25 @@ async function request(path, options = {}, needsAuth = true) {
     try {
       data = await res.json()
     } catch {
-      // the error body was not JSON, so keep the default message
+      // the error body was not JSON, so we use a default message
     }
-    if (res.status === 502 || data.error === 'llm_unavailable') throw new Error(AI_BUSY)
 
-    // Django validation errors look like {"file": ["message"]} or {"detail": "message"}
-    const first = Object.values(data)[0]
-    const message = Array.isArray(first) ? first[0] : data.detail || data.error || `Request failed (${res.status})`
-    throw new Error(message)
+    let message
+    if (res.status === 502 || data.error === 'llm_unavailable') {
+      message = AI_BUSY
+    } else if (res.status === 422) {
+      message = 'No questions could be created. Try another chapter, or fewer questions.'
+    } else if (res.status === 409) {
+      message = data.detail || 'The document is not ready yet, or the quiz was already submitted.'
+    } else {
+      // Django validation errors look like {"file": ["message"]} or {"detail": "message"}
+      const first = Object.values(data)[0]
+      message = Array.isArray(first) ? first[0] : data.detail || data.error || `Request failed (${res.status})`
+    }
+
+    const error = new Error(message)
+    error.status = res.status
+    throw error
   }
 
   if (res.status === 204) return null
@@ -188,6 +199,8 @@ const mockSubmitted = {} // attempt id -> the answers the student sent
 export async function startQuiz(documentId, options) {
   if (USE_MOCK) {
     await wait(1500) // real generation is slow, so the loader needs testing
+    if (options.count === 20) throw new Error(AI_BUSY) // test hook: 20 questions = "AI busy"
+    if (options.count === 19) return { error: 'no_content', questions: [], warnings: [] } // test hook: 19 = "no content"
     return mockQuizStart
   }
   return request('/quiz/start/', jsonBody({ document_id: documentId, ...options }))

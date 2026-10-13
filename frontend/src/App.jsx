@@ -5,6 +5,7 @@ import Login from './pages/Login.jsx'
 import Documents from './pages/Documents.jsx'
 import Workspace from './pages/Workspace.jsx'
 import Quiz from './pages/Quiz.jsx'
+import Results from './pages/Results.jsx'
 import './App.css'
 
 // shows the page only when the student is logged in; otherwise goes to /login
@@ -44,7 +45,8 @@ export default function App() {
           />
           <Route path="/documents" element={<RequireAuth><Documents /></RequireAuth>} />
           <Route path="/workspace/:documentId" element={<RequireAuth><Workspace /></RequireAuth>} />
-          <Route path="/quiz/:documentId" element={<RequireAuth><Quiz /></RequireAuth>} />
+          <Route path="/quiz/:attemptId" element={<RequireAuth><Quiz /></RequireAuth>} />
+          <Route path="/results/:attemptId" element={<RequireAuth><Results /></RequireAuth>} />
         </Routes>
       </main>
     </div>
