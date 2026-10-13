@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -9,6 +10,13 @@ class Document(models.Model):
     pages = models.IntegerField(null=True, blank=True)
     chunks = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="documents",
+    )
 
     def __str__(self):
         return self.title

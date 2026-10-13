@@ -11,22 +11,26 @@ from ai_service import api as ai
 from .models import Document
 from .serializers import DocumentSerializer
 
+# only one document is processed at a time
+process_lock = threading.Lock()
+
 
 def run_processing(doc_id):
     """Runs in a background thread so the upload returns immediately."""
-    close_old_connections()
-    doc = Document.objects.get(id=doc_id)
-    try:
-        result = ai.process_document(doc.id, doc.file.path)
-        doc.status = result.get("status", "failed")
-        doc.warnings = result.get("warnings", [])
-        doc.pages = result.get("pages")
-        doc.chunks = result.get("chunks")
-    except Exception as e:
-        doc.status = "failed"
-        doc.warnings = [f"Processing error: {e}"]
-    doc.save()
-    close_old_connections()
+    with process_lock:
+        close_old_connections()
+        doc = Document.objects.get(id=doc_id)
+        try:
+            result = ai.process_document(doc.id, doc.file.path)
+            doc.status = result.get("status", "failed")
+            doc.warnings = result.get("warnings", [])
+            doc.pages = result.get("pages")
+            doc.chunks = result.get("chunks")
+        except Exception as e:
+            doc.status = "failed"
+            doc.warnings = [f"Processing error: {e}"]
+        doc.save()
+        close_old_connections()
 
 
 class DocumentViewSet(
@@ -36,13 +40,19 @@ class DocumentViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    queryset = Document.objects.order_by("-created_at")
     serializer_class = DocumentSerializer
     parser_classes = [MultiPartParser, FormParser]
 
+    def get_queryset(self):
+        # each student sees only their own documents
+        return Document.objects.filter(user=self.request.user).order_by("-created_at")
+
     def perform_create(self, serializer):
         f = self.request.FILES["file"]
-        doc = serializer.save(title=self.request.data.get("title") or f.name)
+        doc = serializer.save(
+            title=self.request.data.get("title") or f.name,
+            user=self.request.user,
+        )
         threading.Thread(target=run_processing, args=(doc.id,), daemon=True).start()
 
     def perform_destroy(self, instance):

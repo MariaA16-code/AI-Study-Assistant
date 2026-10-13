@@ -1,3 +1,5 @@
+import threading
+
 from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,11 +16,23 @@ from .serializers import (
     SubmitRequestSerializer,
 )
 
+# at most 2 question generations at the same time (avoids the rate limit)
+generation_slots = threading.BoundedSemaphore(2)
 
-def get_ready_document(document_id):
-    """Returns (document, error_response)."""
+
+def generate_limited(*args, **kwargs):
+    if not generation_slots.acquire(timeout=120):
+        raise RuntimeError("Server is busy, try again.")
     try:
-        doc = Document.objects.get(id=document_id)
+        return ai.generate_questions(*args, **kwargs)
+    finally:
+        generation_slots.release()
+
+
+def get_ready_document(document_id, user):
+    """Returns (document, error_response). Only the owner's documents."""
+    try:
+        doc = Document.objects.get(id=document_id, user=user)
     except Document.DoesNotExist:
         return None, Response({"detail": "Document not found."}, status=404)
     if doc.status != "ready":
@@ -36,9 +50,9 @@ def public_question(index, q):
     return data
 
 
-def get_attempt(attempt_id):
+def get_attempt(attempt_id, user):
     try:
-        return QuizAttempt.objects.get(id=attempt_id), None
+        return QuizAttempt.objects.get(id=attempt_id, user=user), None
     except QuizAttempt.DoesNotExist:
         return None, Response({"detail": "Attempt not found."}, status=404)
 
@@ -49,7 +63,7 @@ class ChatView(APIView):
         s = ChatRequestSerializer(data=request.data)
         s.is_valid(raise_exception=True)
 
-        doc, err = get_ready_document(s.validated_data["document_id"])
+        doc, err = get_ready_document(s.validated_data["document_id"], request.user)
         if err:
             return err
 
@@ -72,12 +86,12 @@ class GenerateView(APIView):
         s.is_valid(raise_exception=True)
         data = s.validated_data
 
-        doc, err = get_ready_document(data["document_id"])
+        doc, err = get_ready_document(data["document_id"], request.user)
         if err:
             return err
 
         try:
-            result = ai.generate_questions(
+            result = generate_limited(
                 doc.id,
                 data["question_type"],
                 data["difficulty"],
@@ -101,12 +115,12 @@ class StartQuizView(APIView):
         s.is_valid(raise_exception=True)
         data = s.validated_data
 
-        doc, err = get_ready_document(data["document_id"])
+        doc, err = get_ready_document(data["document_id"], request.user)
         if err:
             return err
 
         try:
-            result = ai.generate_questions(
+            result = generate_limited(
                 doc.id,
                 data["question_type"],
                 data["difficulty"],
@@ -131,6 +145,7 @@ class StartQuizView(APIView):
 
         attempt = QuizAttempt.objects.create(
             document=doc,
+            user=request.user,
             question_type=data["question_type"],
             difficulty=data["difficulty"],
             questions=questions,
@@ -150,7 +165,7 @@ class StartQuizView(APIView):
 class SubmitQuizView(APIView):
     @extend_schema(request=SubmitRequestSerializer)
     def post(self, request, attempt_id):
-        attempt, err = get_attempt(attempt_id)
+        attempt, err = get_attempt(attempt_id, request.user)
         if err:
             return err
         if attempt.submitted_at:
@@ -179,7 +194,7 @@ class SubmitQuizView(APIView):
 
 class ReviewQuizView(APIView):
     def get(self, request, attempt_id):
-        attempt, err = get_attempt(attempt_id)
+        attempt, err = get_attempt(attempt_id, request.user)
         if err:
             return err
         if not attempt.submitted_at:
@@ -207,7 +222,7 @@ class ReviewQuizView(APIView):
 
 class AttemptHistoryView(APIView):
     def get(self, request):
-        attempts = QuizAttempt.objects.all().order_by("-created_at")
+        attempts = QuizAttempt.objects.filter(user=request.user).order_by("-created_at")
         document_id = request.query_params.get("document_id")
         if document_id:
             attempts = attempts.filter(document_id=document_id)

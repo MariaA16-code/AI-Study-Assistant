@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from documents.models import Document
 
@@ -5,6 +6,13 @@ from documents.models import Document
 class QuizAttempt(models.Model):
     document = models.ForeignKey(
         Document, on_delete=models.CASCADE, related_name="attempts"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="quiz_attempts",
     )
     question_type = models.CharField(max_length=10)
     difficulty = models.CharField(max_length=10)
