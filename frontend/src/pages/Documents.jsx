@@ -88,7 +88,9 @@ export default function Documents() {
               ))}
             </div>
             <div className="card-actions">
-              {doc.status === 'ready' && <Link to={`/workspace/${doc.id}`}>Open workspace</Link>}
+              {doc.status === 'ready' && (
+                <Link className="link-btn" to={`/workspace/${doc.id}`}>Open workspace</Link>
+              )}
               <button className="btn-danger" onClick={() => handleDelete(doc)}>Delete</button>
             </div>
           </li>

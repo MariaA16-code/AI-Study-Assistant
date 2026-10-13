@@ -136,6 +136,19 @@
   background: rgba(255, 92, 92, 0.1);
 }
 
+.link-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.link-btn:hover {
+  background: rgba(124, 92, 255, 0.15);
+}
+
 .auth-card {
   max-width: 380px;
   margin: 40px auto;
@@ -164,6 +177,18 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 15px;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* stops Chrome's saved-password autofill from turning the fields white */
+.field input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--bg) inset;
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
 }
 
 .btn-primary {

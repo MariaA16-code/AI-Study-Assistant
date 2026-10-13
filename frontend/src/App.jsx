@@ -38,7 +38,10 @@ export default function App() {
       <main className="content">
         <Routes>
           <Route path="/" element={<Navigate to="/documents" replace />} />
-          <Route path="/login" element={<Login onLogin={setUsername} />} />
+          <Route
+            path="/login"
+            element={getToken() ? <Navigate to="/documents" replace /> : <Login onLogin={setUsername} />}
+          />
           <Route path="/documents" element={<RequireAuth><Documents /></RequireAuth>} />
           <Route path="/workspace/:documentId" element={<RequireAuth><Workspace /></RequireAuth>} />
           <Route path="/quiz/:documentId" element={<RequireAuth><Quiz /></RequireAuth>} />
