@@ -1,122 +1,49 @@
 import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { getToken, getUsername, logout } from './api.js'
+import Login from './pages/Login.jsx'
+import Documents from './pages/Documents.jsx'
+import Workspace from './pages/Workspace.jsx'
+import Quiz from './pages/Quiz.jsx'
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+// shows the page only when the student is logged in; otherwise goes to /login
+function RequireAuth({ children }) {
+  return getToken() ? children : <Navigate to="/login" replace />
 }
 
-export default App
+export default function App() {
+  const navigate = useNavigate()
+  const [username, setUsername] = useState(getUsername())
+
+  function handleLogout() {
+    logout()
+    setUsername(null)
+    navigate('/login')
+  }
+
+  return (
+    <div className="app">
+      <header className="navbar">
+        <h1 className="logo">AI Study Assistant</h1>
+        {username && (
+          <nav>
+            <NavLink to="/documents">My Documents</NavLink>
+            <span className="user">{username}</span>
+            <button className="btn-link" onClick={handleLogout}>Log out</button>
+          </nav>
+        )}
+      </header>
+
+      <main className="content">
+        <Routes>
+          <Route path="/" element={<Navigate to="/documents" replace />} />
+          <Route path="/login" element={<Login onLogin={setUsername} />} />
+          <Route path="/documents" element={<RequireAuth><Documents /></RequireAuth>} />
+          <Route path="/workspace/:documentId" element={<RequireAuth><Workspace /></RequireAuth>} />
+          <Route path="/quiz/:documentId" element={<RequireAuth><Quiz /></RequireAuth>} />
+        </Routes>
+      </main>
+    </div>
+  )
+}
