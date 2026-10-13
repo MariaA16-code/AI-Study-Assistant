@@ -44,7 +44,7 @@ def get_ready_document(document_id, user):
 
 def public_question(index, q):
     """Question as the student sees it: no answer, no explanation."""
-    hidden = ("correct_index", "explanation")
+    hidden = ("correct_index", "explanation", "model_answer")
     data = {k: v for k, v in q.items() if k not in hidden}
     data["index"] = index
     return data
