@@ -37,6 +37,8 @@ export default function Quiz() {
   const changeText = (index, value) => setTexts((prev) => ({ ...prev, [index]: value }))
 
   async function handleSubmit() {
+    if (submitting) return // stops double clicks
+
     const unanswered = total - answeredCount
     if (unanswered > 0 && !window.confirm(`You have ${unanswered} unanswered question(s). Submit anyway?`)) {
       return
@@ -70,15 +72,6 @@ export default function Quiz() {
         <p className="hint">{quiz.title} · {total} question{total === 1 ? '' : 's'}</p>
       </div>
 
-      {(gotFewer || warnings.length > 0) && (
-        <div className="banner">
-          {gotFewer && <p>You asked for {quiz.requested} questions, but only {total} could be created.</p>}
-          {warnings.map((w, i) => (
-            <p key={i}>{w}</p>
-          ))}
-        </div>
-      )}
-
       <div className="progress">
         <div className="progress-bar" style={{ width: `${percent}%` }} />
       </div>
@@ -95,6 +88,16 @@ export default function Quiz() {
           onText={changeText}
         />
       ))}
+
+      {/* a small note under the questions, when fewer questions were created than requested */}
+      {(gotFewer || warnings.length > 0) && (
+        <div className="quiz-notes">
+          {gotFewer && <p className="warning">You asked for {quiz.requested} questions, but only {total} could be created.</p>}
+          {warnings.map((w, i) => (
+            <p key={i} className="warning">{w}</p>
+          ))}
+        </div>
+      )}
 
       {error && <p className="error">{error}</p>}
 

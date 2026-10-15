@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { askQuestion } from '../api.js'
+import { getChat, saveChat } from '../utils/chatStore.js'
+import AnswerText from './AnswerText.jsx'
 import SourceList from './SourceList.jsx'
 
 const SUGGESTIONS = [
@@ -8,14 +10,23 @@ const SUGGESTIONS = [
   'What are the key terms I should know?',
 ]
 
-const NOT_FOUND_TEXT = "I couldn't find this in the uploaded material."
+const NOT_FOUND_TEXT = 'Not found in your material.'
+const GENERIC_ERROR = 'Something went wrong. Please try again.'
+const ERROR_TEXT = {
+  llm_unavailable: 'The AI is busy. Please try again in a minute.',
+}
 
 export default function ChatPanel({ doc }) {
   const isPdf = doc.title.toLowerCase().endsWith('.pdf')
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages] = useState(() => getChat(doc.id))
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef(null)
+
+  // keep the conversation in memory, so it is still here when you come back from a quiz
+  useEffect(() => {
+    saveChat(doc.id, messages)
+  }, [doc.id, messages])
 
   // scroll to the newest message
   useEffect(() => {
@@ -24,7 +35,7 @@ export default function ChatPanel({ doc }) {
 
   async function send(text) {
     const question = text.trim()
-    if (!question || sending) return
+    if (!question || sending) return // stops double clicks while waiting
 
     setInput('')
     setMessages((prev) => [...prev, { role: 'user', text: question }])
@@ -32,22 +43,23 @@ export default function ChatPanel({ doc }) {
 
     try {
       const result = await askQuestion(doc.id, question)
-      if (result.error === 'llm_unavailable') {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', kind: 'error', text: 'The AI is busy. Please try again in a minute.' },
-        ])
+      let reply
+
+      if (result.error) {
+        reply = { role: 'assistant', kind: 'error', text: ERROR_TEXT[result.error] || GENERIC_ERROR }
+      } else if (!result.found) {
+        reply = { role: 'assistant', kind: 'notfound', text: NOT_FOUND_TEXT }
       } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            kind: result.found ? 'answer' : 'notfound',
-            text: result.answer || NOT_FOUND_TEXT,
-            sources: result.sources || [],
-          },
-        ])
+        reply = {
+          role: 'assistant',
+          kind: 'answer',
+          text: result.answer,
+          mode: result.mode,
+          sources: result.sources || [],
+        }
       }
+
+      setMessages((prev) => [...prev, reply])
     } catch (err) {
       setMessages((prev) => [...prev, { role: 'assistant', kind: 'error', text: err.message }])
     } finally {
@@ -69,7 +81,7 @@ export default function ChatPanel({ doc }) {
             <p className="hint">Answers come with the chapter and page where they were found.</p>
             <div className="suggestions">
               {SUGGESTIONS.map((s) => (
-                <button key={s} type="button" className="suggestion" onClick={() => send(s)}>
+                <button key={s} type="button" className="suggestion" onClick={() => send(s)} disabled={sending}>
                   {s}
                 </button>
               ))}
@@ -80,8 +92,24 @@ export default function ChatPanel({ doc }) {
         {messages.map((m, i) => (
           <div key={i} className={`bubble-row role-${m.role}`}>
             <div className={`bubble role-${m.role} ${m.kind || ''}`}>
-              <p>{m.text}</p>
-              {m.kind === 'notfound' && <p className="bubble-hint">Try asking in a more specific way.</p>}
+              {m.role === 'user' && <p>{m.text}</p>}
+
+              {m.kind === 'answer' && (
+                <>
+                  {m.mode === 'summary' && <span className="mode-tag">Summary</span>}
+                  <AnswerText text={m.text} />
+                </>
+              )}
+
+              {m.kind === 'notfound' && (
+                <>
+                  <p>{m.text}</p>
+                  <p className="bubble-hint">Try asking in a more specific way.</p>
+                </>
+              )}
+
+              {m.kind === 'error' && <p>{m.text}</p>}
+
               {m.sources && <SourceList sources={m.sources} isPdf={isPdf} />}
             </div>
           </div>

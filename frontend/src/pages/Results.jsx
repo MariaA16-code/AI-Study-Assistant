@@ -5,28 +5,38 @@ import ReviewCard from '../components/ReviewCard.jsx'
 import Spinner from '../components/Spinner.jsx'
 import { loadQuiz, loadWritten } from '../utils/quizStorage.js'
 
+// The review response may not repeat the question text, options or source,
+// so we fill the gaps from the quiz we kept when it was created.
+function mergeQuestion(review, stored, position) {
+  const base = stored.find((q) => q.index === review.index) || stored[position] || {}
+  const merged = { ...base, ...review }
+
+  if (!merged.type) {
+    merged.type = merged.correct_index !== undefined && merged.correct_index !== null ? 'mcq' : 'short'
+  }
+  if (merged.type === 'mcq' && merged.is_correct === undefined) {
+    merged.is_correct = merged.selected_index === merged.correct_index
+  }
+  return merged
+}
+
 export default function Results() {
   const { attemptId } = useParams()
   const [quiz] = useState(() => loadQuiz(attemptId))
   const [written] = useState(() => loadWritten(attemptId))
-  const [questions, setQuestions] = useState([])
+  const [reviews, setReviews] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     getReview(attemptId)
-      .then((data) => setQuestions(Array.isArray(data) ? data : data.questions || []))
+      .then((data) => setReviews(Array.isArray(data) ? data : data.questions || []))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [attemptId])
 
   const workspaceLink = quiz ? `/workspace/${quiz.documentId}` : '/documents'
   const isPdf = (quiz?.title || '').toLowerCase().endsWith('.pdf')
-
-  // only multiple-choice questions are scored
-  const mcqs = questions.filter((q) => q.type === 'mcq')
-  const correct = mcqs.filter((q) => q.is_correct).length
-  const percent = mcqs.length ? Math.round((correct / mcqs.length) * 100) : 0
 
   if (loading) {
     return (
@@ -44,6 +54,14 @@ export default function Results() {
       </section>
     )
   }
+
+  const stored = quiz?.questions || []
+  const questions = reviews.map((r, i) => mergeQuestion(r, stored, i))
+
+  // only multiple-choice questions are scored
+  const mcqs = questions.filter((q) => q.type === 'mcq')
+  const correct = mcqs.filter((q) => q.is_correct).length
+  const percent = mcqs.length ? Math.round((correct / mcqs.length) * 100) : 0
 
   return (
     <section>
@@ -71,6 +89,8 @@ export default function Results() {
           </div>
         )}
       </div>
+
+      {questions.length === 0 && <p className="empty">No review came back for this quiz.</p>}
 
       {questions.map((q, i) => (
         <ReviewCard
