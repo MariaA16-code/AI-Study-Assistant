@@ -13,6 +13,7 @@ function resultTag(isMcq, unanswered, isCorrect) {
 // One question on the results page, with the right answer, the explanation and the source.
 export default function ReviewCard({ question, number, writtenAnswer, isPdf }) {
   const isMcq = question.type === 'mcq'
+  const options = question.options || []
   const selected = question.selected_index
   const unanswered = isMcq && (selected === null || selected === undefined)
   const source = question.source
@@ -30,7 +31,7 @@ export default function ReviewCard({ question, number, writtenAnswer, isPdf }) {
 
       {isMcq ? (
         <div className="options">
-          {question.options.map((option, i) => {
+          {options.map((option, i) => {
             const isCorrect = i === question.correct_index
             const isWrongPick = i === selected && !isCorrect
             let note = ''

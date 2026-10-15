@@ -6,7 +6,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://127.0.0.1:8000',
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        // chat and quiz generation can take 60 s or more
+        timeout: 120000,
+        proxyTimeout: 120000,
+      },
     },
   },
 })

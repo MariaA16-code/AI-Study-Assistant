@@ -37,3 +37,14 @@ export function loadWritten(attemptId) {
     return {}
   }
 }
+
+// called on logout, so a second account in the same browser never sees the first one's quizzes
+export function clearQuizStorage() {
+  try {
+    Object.keys(sessionStorage)
+      .filter((key) => key.startsWith('study_quiz_') || key.startsWith('study_written_'))
+      .forEach((key) => sessionStorage.removeItem(key))
+  } catch {
+    // ignore
+  }
+}

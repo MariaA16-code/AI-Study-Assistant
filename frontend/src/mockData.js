@@ -21,6 +21,17 @@ export const mockAnswer = {
   ],
 }
 
+// an overview answer: the text already has a summary plus bullet points
+export const mockSummary = {
+  answer:
+    'This document is an introduction to operating systems.\n\n- Processes are programs in execution.\n- Threads are units of execution inside a process.\n- The scheduler decides which process runs next.\n- Memory is divided between processes and kept separate.',
+  found: true,
+  mode: 'summary',
+  sources: [
+    { chapter: 'Chapter 1. Introduction', page: 1, page_end: 12, snippet: '' },
+  ],
+}
+
 export const mockNotFound = {
   answer: "I couldn't find this in the uploaded material.",
   found: false,

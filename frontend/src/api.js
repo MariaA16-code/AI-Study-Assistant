@@ -4,13 +4,19 @@ import {
   mockAnswer,
   mockNotFound,
   mockLlmDown,
+  mockSummary,
   mockQuizStart,
   mockQuizAnswerKey,
 } from './mockData.js'
+import { clearChats } from './utils/chatStore.js'
+import { clearQuizStorage } from './utils/quizStorage.js'
 
 // true = use fake data, false = call the real backend
 const USE_MOCK = true
 const API_BASE = '/api'
+
+// chat and quiz generation can take 60 s or more, so we wait up to 2 minutes
+const REQUEST_TIMEOUT_MS = 120000
 
 const TOKEN_KEY = 'study_token'
 const USER_KEY = 'study_username'
@@ -19,6 +25,13 @@ const USER_KEY = 'study_username'
 const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.txt']
 const MAX_SIZE = 25 * 1024 * 1024 // 25 MB
 const AI_BUSY = 'The AI is busy. Please try again in a minute.'
+
+// the backend can send {"error": "<code>"}, so every code gets a readable message
+const ERROR_MESSAGES = {
+  llm_unavailable: AI_BUSY,
+  chapter_not_found: 'Chapter not found. Choose another chapter, or "All chapters".',
+  no_content: 'There is no content to make questions from.',
+}
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -33,9 +46,12 @@ function saveLogin(data) {
   return data
 }
 
+// logging out also clears the quizzes and chats, so the next account never sees them
 export function logout() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
+  clearQuizStorage()
+  clearChats()
 }
 
 // ---------- one function that sends every request ----------
@@ -45,7 +61,20 @@ async function request(path, options = {}, needsAuth = true) {
   const headers = { ...options.headers }
   if (needsAuth && getToken()) headers.Authorization = `Token ${getToken()}`
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  let res
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: controller.signal })
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('The request took too long. Please try again.', { cause: err })
+    }
+    throw new Error('Cannot reach the server. Check that the backend is running.', { cause: err })
+  } finally {
+    clearTimeout(timer)
+  }
 
   // not logged in, or the token is no longer valid
   if (res.status === 401 && needsAuth) {
@@ -57,14 +86,18 @@ async function request(path, options = {}, needsAuth = true) {
   if (!res.ok) {
     let data = {}
     try {
-      data = await res.json()
+      data = (await res.json()) || {}
     } catch {
       // the error body was not JSON, so we use a default message
     }
 
     let message
-    if (res.status === 502 || data.error === 'llm_unavailable') {
+    if (ERROR_MESSAGES[data.error]) {
+      message = ERROR_MESSAGES[data.error]
+    } else if (res.status === 502) {
       message = AI_BUSY
+    } else if (res.status === 404) {
+      message = 'Not found. It may have been deleted, or it belongs to another account.'
     } else if (res.status === 422) {
       message = 'No questions could be created. Try another chapter, or fewer questions.'
     } else if (res.status === 409) {
@@ -186,6 +219,8 @@ export async function askQuestion(documentId, question) {
     const q = question.toLowerCase()
     if (q.includes('unknown')) return mockNotFound // type "unknown" to test "not found"
     if (q.includes('busy')) return mockLlmDown // type "busy" to test the AI-busy message
+    if (q.includes('error')) return { answer: '', found: false, sources: [], error: 'internal_error' } // type "error" for a generic error
+    if (q.includes('summar')) return mockSummary // type "summary" to test a summary with bullets
     return mockAnswer
   }
   return request('/chat/', jsonBody({ document_id: documentId, question }))
@@ -203,7 +238,16 @@ export async function startQuiz(documentId, options) {
     if (options.count === 19) return { error: 'no_content', questions: [], warnings: [] } // test hook: 19 = "no content"
     return mockQuizStart
   }
-  return request('/quiz/start/', jsonBody({ document_id: documentId, ...options }))
+
+  const body = {
+    document_id: documentId,
+    question_type: options.question_type,
+    difficulty: options.difficulty,
+    count: options.count,
+  }
+  // when no chapter is chosen, the chapter field is left out completely
+  if (options.chapter) body.chapter = options.chapter
+  return request('/quiz/start/', jsonBody(body))
 }
 
 // answers looks like {"0": 2, "1": 0} (question index -> chosen option, counted from 0)
