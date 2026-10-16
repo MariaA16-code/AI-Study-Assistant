@@ -21,3 +21,5 @@ LLM_RETRIES = config("LLM_RETRIES", default=1, cast=int)  # extra tries per prov
 GEN_RETRIES = config("GEN_RETRIES", default=0, cast=int)  # extra tries per provider, generation
 LLM_RETRY_DELAY = config("LLM_RETRY_DELAY", default=1.0, cast=float)  # seconds, grows per try
 SUMMARY_PASSAGES = config("SUMMARY_PASSAGES", default=14, cast=int)
+GEN_EXTRA_ROUNDS = config("GEN_EXTRA_ROUNDS", default=4, cast=int)  # extra tries to reach the count
+GEN_EXTRA_CANDIDATES = config("GEN_EXTRA_CANDIDATES", default=3, cast=int)  # spare questions asked per call

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 TYPES = {"mcq", "short", "long", "mixed"}
 DIFFICULTIES = {"low", "medium", "high"}
 BATCH = 5
+MAX_ASK = 8  # most questions asked in one call
 MIXED_PATTERN = ["mcq", "mcq", "short", "mcq", "long"]
 
 
@@ -123,11 +124,17 @@ def _generate_kind(
     rejected: list[str],
 ) -> tuple[list[dict], str | None]:
     items: list[dict] = []
-    for _ in range(math.ceil(n / BATCH) + 2):
+    stalled = 0
+    last_count = -1
+    for _ in range(math.ceil(n / BATCH) + settings.GEN_EXTRA_ROUNDS):
         remaining = n - len(items)
         if remaining <= 0:
             break
-        want = min(BATCH, remaining + 1)  # one extra absorbs a rejected question
+        stalled = stalled + 1 if len(items) == last_count else 0
+        last_count = len(items)
+        if stalled >= 2:  # two rounds in a row added nothing, so stop wasting calls
+            break
+        want = min(MAX_ASK, remaining + settings.GEN_EXTRA_CANDIDATES)  # spares absorb rejected ones
         passages = _spread(pool, want, rng)
         prompt = build_generate_prompt(kind, difficulty, passages, want)
         try:
