@@ -3,7 +3,9 @@ AI service contract. The backend calls ONLY these functions.
 Heavy libraries are imported inside the functions, so `import ai_service`
 works even where the AI libraries are not installed yet.
 """
+import logging
 
+logger = logging.getLogger(__name__)
 
 def process_document(document_id: int, file_path: str) -> dict:
     """Extract text, chunk, embed and store the document.
@@ -29,6 +31,7 @@ def process_document(document_id: int, file_path: str) -> dict:
     except (FileNotFoundError, ValueError) as exc:
         return failed(str(exc))
     except Exception:
+        logger.exception("Could not read %s", file_path)
         return failed("This file could not be read. It may be corrupted or protected.")
 
     if not chunks:
@@ -40,6 +43,7 @@ def process_document(document_id: int, file_path: str) -> dict:
     try:
         store_chunks(document_id, chunks)
     except Exception:
+        logger.exception("Could not store document %s", document_id)
         return failed("The document could not be stored for search.", pages=len(doc.pages))
 
     return {
