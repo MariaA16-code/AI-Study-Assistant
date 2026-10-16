@@ -28,7 +28,7 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 PROJECT_ROOT = BASE_DIR.parent
 sys.path.append(str(PROJECT_ROOT))
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
 
 # Application definition
