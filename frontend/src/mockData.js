@@ -82,4 +82,57 @@ export const mockQuizAnswerKey = {
   0: { correct_index: 1, explanation: 'A process is a program that is currently being executed.' },
   1: { correct_index: 2, explanation: 'Threads of one process share its address space (code, data and heap).' },
   2: { model_answer: 'A thread is the smallest unit of execution inside a process.' },
+}// Demo data for the revision guide. The shape below is a PROPOSAL.
+// Zainab and Maria still have to confirm the real shape before we rely on it.
+export const mockStudyGuide = {
+  summary:
+    'This document is an introduction to operating systems.\n\n- A process is a program in execution.\n- Threads are units of execution inside a process.\n- The scheduler decides which process runs next.',
+  key_concepts: ['Processes', 'Threads', 'Scheduling', 'Memory management'],
+  definitions: [
+    {
+      term: 'Process',
+      definition: 'A program that is currently being executed.',
+      source: { chapter: 'Chapter 3. Processes', page: 84, page_end: 84 },
+    },
+    {
+      term: 'Thread',
+      definition: 'The smallest unit of execution inside a process.',
+      source: { chapter: 'Chapter 4. Threads', page: 118, page_end: 118 },
+    },
+  ],
+  short_questions: [
+    {
+      question: 'What is a process?',
+      answer: 'A program in execution, with its own memory space and resources.',
+      source: { chapter: 'Chapter 3. Processes', page: 84, page_end: 84 },
+    },
+    {
+      question: 'Name one resource that threads of the same process share.',
+      answer: 'The address space (code, data and heap).',
+      source: { chapter: 'Chapter 4. Threads', page: 120, page_end: 120 },
+    },
+  ],
+  long_questions: [
+    {
+      question: 'Explain the difference between a process and a thread.',
+      answer_outline: [
+        'Define a process and a thread.',
+        'A process has its own address space; the threads of one process share it.',
+        'Threads are cheaper to create and to switch between.',
+        'Give one example of when to use each.',
+      ],
+      source: { chapter: 'Chapter 4. Threads', page: 118, page_end: 121 },
+    },
+  ],
+  mcqs: [
+    {
+      question: 'What is a process?',
+      options: ['A program on disk', 'A program in execution', 'A kind of file', 'A hardware device'],
+      correct_index: 1,
+      explanation: 'A process is a program that is currently being executed.',
+      source: { chapter: 'Chapter 3. Processes', page: 84, page_end: 84 },
+    },
+  ],
+  revision_topics: ['Process states and transitions', 'Scheduling algorithms', 'Threads versus processes'],
+  warnings: [],
 }

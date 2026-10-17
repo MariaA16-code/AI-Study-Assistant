@@ -5,15 +5,23 @@ import {
   mockNotFound,
   mockLlmDown,
   mockSummary,
+  mockStudyGuide,
   mockQuizStart,
   mockQuizAnswerKey,
 } from './mockData.js'
 import { clearChats } from './utils/chatStore.js'
+import { clearGuides } from './utils/guideStore.js'
 import { clearQuizStorage } from './utils/quizStorage.js'
 
-// true = use fake data, false = call the real backend
-const USE_MOCK = true
+// true  = sample data (demo mode): uploaded files are NOT read and every answer is a fixed example
+// false = the real backend and AI service
+const USE_MOCK = true;
+export const USING_MOCK = USE_MOCK
+
 const API_BASE = '/api'
+
+// PROPOSED address of the revision guide. Zainab has not confirmed it yet.
+const STUDY_GUIDE_PATH = '/study-guide/'
 
 // chat and quiz generation can take 60 s or more, so we wait up to 2 minutes
 const REQUEST_TIMEOUT_MS = 120000
@@ -46,12 +54,13 @@ function saveLogin(data) {
   return data
 }
 
-// logging out also clears the quizzes and chats, so the next account never sees them
+// logging out also clears the quizzes, chats and guides, so the next account never sees them
 export function logout() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
   clearQuizStorage()
   clearChats()
+  clearGuides()
 }
 
 // ---------- one function that sends every request ----------
@@ -162,7 +171,7 @@ export async function getDocuments() {
     await wait(300)
     return currentMockDocs()
   }
-  return request('/documents/')
+ return request('/documents/').then((data) => (Array.isArray(data) ? data : data.results || [])).then((data) => (Array.isArray(data) ? data : data.results || [])).then((data) => (Array.isArray(data) ? data : data.results || [])) 
 }
 
 export async function uploadDocument(file) {
@@ -209,6 +218,25 @@ export async function getChapters(documentId) {
   }
   const data = await request(`/documents/${documentId}/chapters/`)
   return data.chapters
+}
+
+// ---------- revision guide ----------
+
+// NOTE: this endpoint does not exist yet. Until Zainab and Maria confirm it,
+// the real call shows "not available on the server yet".
+export async function getStudyGuide(documentId) {
+  if (USE_MOCK) {
+    await wait(1800)
+    return mockStudyGuide
+  }
+  try {
+    return await request(STUDY_GUIDE_PATH, jsonBody({ document_id: documentId }))
+  } catch (err) {
+    if (err.status === 404 || err.status === 405) {
+      throw new Error('The revision guide is not available on the server yet.', { cause: err })
+    }
+    throw err
+  }
 }
 
 // ---------- chat ----------

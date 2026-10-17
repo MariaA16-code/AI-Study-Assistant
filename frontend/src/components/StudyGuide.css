@@ -1,0 +1,141 @@
+.guide-section {
+  margin-bottom: 18px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.guide-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.guide-number {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+}
+
+.guide .answer-text p {
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.guide .answer-text ul {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  padding: 4px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 14px;
+}
+
+.guide-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-item {
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.guide-term {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.guide-text {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.guide-answer {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: rgba(62, 207, 142, 0.08);
+  border-left: 3px solid var(--ok);
+  border-radius: 6px;
+  line-height: 1.5;
+}
+
+.guide-outline {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  line-height: 1.6;
+}
+
+.guide-source {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.guide-item .options {
+  margin-top: 10px;
+}
+
+.revision-intro {
+  padding: 24px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.revision-intro h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.revision-intro p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.revision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.revision-actions .btn-primary {
+  width: auto;
+  padding: 10px 24px;
+}
+
+.revision-actions button.link-btn {
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}

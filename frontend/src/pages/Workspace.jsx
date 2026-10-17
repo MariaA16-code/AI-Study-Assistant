@@ -3,6 +3,13 @@ import { Link, useParams } from 'react-router-dom'
 import { getDocuments } from '../api.js'
 import ChatPanel from '../components/ChatPanel.jsx'
 import GeneratePanel from '../components/GeneratePanel.jsx'
+import RevisionPanel from '../components/RevisionPanel.jsx'
+
+const TABS = [
+  { id: 'revision', label: 'Revision' },
+  { id: 'chat', label: 'Chat' },
+  { id: 'quiz', label: 'Quiz' },
+]
 
 export default function Workspace() {
   const { documentId } = useParams()
@@ -10,7 +17,7 @@ export default function Workspace() {
   const [doc, setDoc] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('chat') // 'chat' or 'generate'
+  const [tab, setTab] = useState('revision') // students start with the revision guide
 
   useEffect(() => {
     getDocuments()
@@ -61,19 +68,26 @@ export default function Workspace() {
       </div>
 
       <div className="tabs">
-        <button type="button" className={`tab ${tab === 'chat' ? 'active' : ''}`} onClick={() => setTab('chat')}>
-          Chat
-        </button>
-        <button type="button" className={`tab ${tab === 'generate' ? 'active' : ''}`} onClick={() => setTab('generate')}>
-          Generate
-        </button>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`tab ${tab === t.id ? 'active' : ''}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* both tabs stay mounted, so the chat history and the form choices are kept when you switch tabs */}
+      {/* all tabs stay mounted, so the guide, the chat and the form choices are kept when you switch tabs */}
+      <div hidden={tab !== 'revision'}>
+        <RevisionPanel doc={doc} onStartQuiz={() => setTab('quiz')} />
+      </div>
       <div hidden={tab !== 'chat'}>
         <ChatPanel doc={doc} />
       </div>
-      <div hidden={tab !== 'generate'}>
+      <div hidden={tab !== 'quiz'}>
         <GeneratePanel doc={doc} />
       </div>
     </section>

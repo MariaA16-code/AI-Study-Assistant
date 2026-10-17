@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
-import { getToken, getUsername, logout } from './api.js'
+import { USING_MOCK, getToken, getUsername, logout } from './api.js'
+import DemoBanner from './components/DemoBanner.jsx'
 import Login from './pages/Login.jsx'
 import Documents from './pages/Documents.jsx'
 import Workspace from './pages/Workspace.jsx'
@@ -25,6 +26,8 @@ export default function App() {
 
   return (
     <div className="app">
+      {USING_MOCK && <DemoBanner />}
+
       <header className="navbar">
         <h1 className="logo">AI Study Assistant</h1>
         {username && (
