@@ -15,7 +15,7 @@ import { clearQuizStorage } from './utils/quizStorage.js'
 
 // true  = sample data (demo mode): uploaded files are NOT read and every answer is a fixed example
 // false = the real backend and AI service
-const USE_MOCK = true;
+const USE_MOCK = false;
 export const USING_MOCK = USE_MOCK
 
 const API_BASE = '/api'
@@ -171,7 +171,7 @@ export async function getDocuments() {
     await wait(300)
     return currentMockDocs()
   }
- return request('/documents/').then((data) => (Array.isArray(data) ? data : data.results || [])).then((data) => (Array.isArray(data) ? data : data.results || [])).then((data) => (Array.isArray(data) ? data : data.results || [])) 
+  return request('/documents/').then((data) => (Array.isArray(data) ? data : data.results || []))
 }
 
 export async function uploadDocument(file) {
@@ -276,6 +276,31 @@ export async function startQuiz(documentId, options) {
   // when no chapter is chosen, the chapter field is left out completely
   if (options.chapter) body.chapter = options.chapter
   return request('/quiz/start/', jsonBody(body))
+}
+
+// the same options as startQuiz, but the questions come back already solved
+// (correct answers, explanations, sources) and no quiz attempt is created
+export async function generateQuestions(documentId, options) {
+  if (USE_MOCK) {
+    await wait(1200)
+    if (options.count === 20) throw new Error(AI_BUSY) // test hook: 20 questions = "AI busy"
+    if (options.count === 19) return { error: 'no_content', questions: [], warnings: [] } // test hook: 19 = "no content"
+    const solved = mockQuizStart.questions
+      .filter((q) => options.question_type === 'mixed' || q.type === options.question_type)
+      .map((q) => ({ ...q, ...mockQuizAnswerKey[q.index] }))
+      .slice(0, options.count)
+    return { questions: solved, warnings: [] }
+  }
+
+  const body = {
+    document_id: documentId,
+    question_type: options.question_type,
+    difficulty: options.difficulty,
+    count: options.count,
+  }
+  // when no chapter is chosen, the chapter field is left out completely
+  if (options.chapter) body.chapter = options.chapter
+  return request('/quiz/generate/', jsonBody(body))
 }
 
 // answers looks like {"0": 2, "1": 0} (question index -> chosen option, counted from 0)

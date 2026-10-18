@@ -3,12 +3,10 @@ import { Link, useParams } from 'react-router-dom'
 import { getDocuments } from '../api.js'
 import ChatPanel from '../components/ChatPanel.jsx'
 import GeneratePanel from '../components/GeneratePanel.jsx'
-import RevisionPanel from '../components/RevisionPanel.jsx'
 
 const TABS = [
-  { id: 'revision', label: 'Revision' },
+  { id: 'generate', label: 'Generate' },
   { id: 'chat', label: 'Chat' },
-  { id: 'quiz', label: 'Quiz' },
 ]
 
 export default function Workspace() {
@@ -17,7 +15,7 @@ export default function Workspace() {
   const [doc, setDoc] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('revision') // students start with the revision guide
+  const [tab, setTab] = useState('generate')
 
   useEffect(() => {
     getDocuments()
@@ -80,15 +78,12 @@ export default function Workspace() {
         ))}
       </div>
 
-      {/* all tabs stay mounted, so the guide, the chat and the form choices are kept when you switch tabs */}
-      <div hidden={tab !== 'revision'}>
-        <RevisionPanel doc={doc} onStartQuiz={() => setTab('quiz')} />
+      {/* both tabs stay mounted, so the chat and the form choices are kept when you switch tabs */}
+      <div hidden={tab !== 'generate'}>
+        <GeneratePanel doc={doc} />
       </div>
       <div hidden={tab !== 'chat'}>
         <ChatPanel doc={doc} />
-      </div>
-      <div hidden={tab !== 'quiz'}>
-        <GeneratePanel doc={doc} />
       </div>
     </section>
   )
