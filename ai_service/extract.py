@@ -1,8 +1,17 @@
 """Read PDF / DOCX / TXT into pages with page numbers and chapter hints."""
+import hashlib
+import io
+import logging
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import settings
+
+logger = logging.getLogger(__name__)
+
+MIN_TEXT_CHARS = 20  # a PDF page with less text than this is treated as a scanned image
 PAGE_CHARS = 3000  # DOCX/TXT have no real pages, so we make ~3000-char sections
 CHAPTER_RE = re.compile(r"^(chapter|unit|lesson)\s+(\d+|[ivxlc]+)\b", re.IGNORECASE)
 # Table-of-contents entries: dot leaders, or a chapter/section entry ending in a page number
@@ -23,6 +32,7 @@ def _is_chapter_line(line: str) -> bool:
         return True
     # a heading is short and does not read like a sentence
     return len(line) <= 80 and not line.endswith((".", "!", "?", ":"))
+
 
 @dataclass
 class Page:
@@ -45,13 +55,103 @@ def _detect_chapter(text: str) -> str | None:
     return None
 
 
+_ocr_lock = threading.Lock()
+_ocr_engine = None
+
+
+def _get_ocr_engine():
+    """Load the OCR engine once. Raises ImportError when rapidocr is not installed."""
+    global _ocr_engine
+    with _ocr_lock:
+        if _ocr_engine is None:
+            from rapidocr import RapidOCR
+
+            _ocr_engine = RapidOCR(params={"Global.log_level": "error"})
+        return _ocr_engine
+
+
+def _boxes_to_text(items: list[tuple[float, float, float, float, str]]) -> str:
+    """Turn OCR boxes (x0, y0, x1, y1, text) into lines of text.
+
+    Boxes on the same line are joined in reading order. A wide gap between two boxes
+    (a table column) is written as ' | ', so table rows keep their cells apart.
+    """
+    if not items:
+        return ""
+    heights = sorted(y1 - y0 for _, y0, _, y1, _ in items)
+    median = heights[len(heights) // 2] or 1.0
+
+    def centre(item):
+        return (item[1] + item[3]) / 2
+
+    rows: list[list] = []
+    current: list = []
+    for item in sorted(items, key=centre):
+        if current and abs(centre(item) - sum(centre(c) for c in current) / len(current)) > 0.6 * median:
+            rows.append(current)
+            current = []
+        current.append(item)
+    if current:
+        rows.append(current)
+
+    lines = []
+    for row in rows:
+        row.sort(key=lambda it: it[0])
+        parts = [row[0][4]]
+        for prev, nxt in zip(row, row[1:]):
+            parts.append(" | " if nxt[0] - prev[2] > 2 * median else " ")
+            parts.append(nxt[4])
+        line = "".join(parts).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def _ocr_image(image) -> str:
+       """Read the text in a PIL image with OCR. Raises ImportError when rapidocr is not installed."""
+       import numpy as np
+
+       engine = _get_ocr_engine()
+       result = engine(np.array(image.convert("RGB")))
+       if result is None or result.boxes is None or result.txts is None:
+           return ""
+       items = []
+       for box, text, score in zip(result.boxes, result.txts, result.scores):
+           if float(score) < 0.5 or not str(text).strip():  # skip uncertain noise
+               continue
+           xs = [pt[0] for pt in box]
+           ys = [pt[1] for pt in box]
+           items.append((min(xs), min(ys), max(xs), max(ys), str(text).strip()))
+       return _boxes_to_text(items)
+
+
+def _ocr_page_text(page) -> str:
+       """Read a scanned PDF page with OCR."""
+       return _ocr_image(page.to_image(resolution=settings.OCR_DPI).original)
+
+
 def _read_pdf(path: Path) -> tuple[list[Page], list[str]]:
     import pdfplumber
 
-    pages, empty = [], 0
+    pages: list[Page] = []
+    empty = ocr_used = ocr_skipped = 0
+    ocr_missing = False
     with pdfplumber.open(str(path)) as pdf:
         for i, p in enumerate(pdf.pages, start=1):
             text = (p.extract_text() or "").strip()
+            if len(text) < MIN_TEXT_CHARS and settings.OCR_ENABLED and not ocr_missing:
+                if ocr_used >= settings.OCR_MAX_PAGES:
+                    ocr_skipped += 1
+                else:
+                    try:
+                        ocr_text = _ocr_page_text(p)
+                        if len(ocr_text) > len(text):
+                            text = ocr_text
+                            ocr_used += 1
+                    except ImportError:
+                        ocr_missing = True
+                    except Exception:
+                        logger.exception("OCR failed on page %s of %s", i, path.name)
             if not text:
                 empty += 1
             pages.append(Page(i, text))
@@ -64,10 +164,21 @@ def _read_pdf(path: Path) -> tuple[list[Page], list[str]]:
         page.chapter = current
 
     warnings = []
+    if ocr_used:
+        warnings.append(
+            f"{ocr_used} page(s) had no text layer and were read with OCR. "
+            "OCR can make small mistakes, especially with tables and handwriting."
+        )
+    if ocr_missing:
+        warnings.append("Some pages are scanned images, but OCR is not installed (pip install rapidocr).")
+    if ocr_skipped:
+        warnings.append(
+            f"OCR was limited to {settings.OCR_MAX_PAGES} pages, so {ocr_skipped} scanned page(s) were skipped."
+        )
     if pages and empty / len(pages) > 0.5:
         warnings.append(
-            "Most pages have no extractable text. This looks like a scanned PDF; "
-            "OCR is not supported yet."
+            "Most pages have no extractable text. This looks like a scanned PDF, "
+            "and OCR could not read it."
         )
     return pages, warnings
 
@@ -100,22 +211,138 @@ def _paragraphs_to_pages(items: list[tuple[str, bool]]) -> list[Page]:
     return pages
 
 
+def _docx_blocks(document):
+    """Paragraphs and tables in the order they appear in the document."""
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    for child in document.element.body.iterchildren():
+        if child.tag.endswith("}p"):
+            yield Paragraph(child, document)
+        elif child.tag.endswith("}tbl"):
+            yield Table(child, document)
+
+
+class _DocxImages:
+       """Reads the text inside pictures of a DOCX with OCR. Each distinct picture is read once."""
+
+       MIN_SIDE = 60  # smaller pictures are icons or bullets, not worth reading
+
+       def __init__(self, document):
+           self.document = document
+           self.cache: dict[str, list[str]] = {}
+           self.attempts = 0
+           self.with_text = 0
+           self.skipped = 0
+           self.missing = False
+
+       def lines(self, paragraph) -> list[str]:
+           """Text lines found in the pictures of one paragraph (empty when there are none)."""
+           if not settings.OCR_ENABLED or self.missing:
+               return []
+           found = []
+           for rid in paragraph._p.xpath(".//a:blip/@r:embed"):
+               part = self.document.part.related_parts.get(rid)
+               if part is None:
+                   continue
+               key = hashlib.md5(part.blob).hexdigest()
+               if key not in self.cache:
+                   self.cache[key] = self._read(part.blob)
+               found.extend(self.cache[key])
+           return found
+
+       def _read(self, blob: bytes) -> list[str]:
+           from PIL import Image
+
+           try:
+               image = Image.open(io.BytesIO(blob))
+               if min(image.size) < self.MIN_SIDE:
+                   return []
+               if self.attempts >= settings.OCR_MAX_IMAGES:
+                   self.skipped += 1
+                   return []
+               self.attempts += 1
+               text = _ocr_image(image)
+           except ImportError:
+               self.missing = True
+               return []
+           except Exception:  # unsupported picture formats such as EMF or WMF
+               logger.warning("Could not read a picture inside the DOCX", exc_info=True)
+               return []
+           lines = []
+           for line in text.splitlines():
+               if CHAPTER_RE.match(line):  # a line inside a picture must never start a new chapter
+                   line = "- " + line
+               lines.append(line)
+           if lines:
+               self.with_text += 1
+           return lines
+
+
+def _table_rows(table, images: "_DocxImages | None" = None) -> list[str]:
+       """One text line per table row, cells joined with ' | ' (merged cells are counted once).
+
+       Tables nested inside a cell, and text inside pictures in a cell, are read right after the row.
+       """
+       rows = []
+       for row in table.rows:
+           cells, seen, nested, extra = [], set(), [], []
+           for cell in row.cells:
+               if id(cell._tc) in seen:  # a merged cell shows up once per column it spans
+                   continue
+               seen.add(id(cell._tc))
+               text = " ".join(cell.text.split())
+               if text:
+                   cells.append(text)
+               nested.extend(cell.tables)
+               if images is not None:
+                   for paragraph in cell.paragraphs:
+                       extra.extend(images.lines(paragraph))
+           line = " | ".join(cells)
+           if line:
+               if CHAPTER_RE.match(line):  # a table row must never start a new chapter
+                   line = "- " + line
+               rows.append(line)
+           rows.extend(extra)
+           for inner in nested:
+               rows.extend(_table_rows(inner, images))
+       return rows
+
+
 def _read_docx(path: Path) -> tuple[list[Page], list[str]]:
-    import docx
+       import docx
+       from docx.text.paragraph import Paragraph
 
-    document = docx.Document(str(path))
-    items = []
-    for para in document.paragraphs:
-        text = para.text.strip()
-        if not text:
-            continue
-        style = para.style.name if para.style is not None else ""
-        items.append((text, style.startswith("Heading 1")))
+       document = docx.Document(str(path))
+       images = _DocxImages(document)
+       items = []
+       for block in _docx_blocks(document):
+           if isinstance(block, Paragraph):
+               text = block.text.strip()
+               if text:
+                   style = block.style.name if block.style is not None else ""
+                   items.append((text, style.startswith("Heading 1")))
+               items.extend((line, False) for line in images.lines(block))
+           else:
+               items.extend((row, False) for row in _table_rows(block, images))
 
-    warnings = ["DOCX has no fixed pages; page numbers are approximate sections."]
-    if document.tables:
-        warnings.append("Tables in the DOCX are not read yet.")
-    return _paragraphs_to_pages(items), warnings
+       warnings = ["DOCX has no fixed pages; page numbers are approximate sections."]
+       if images.with_text:
+           warnings.append(
+               f"{images.with_text} picture(s) in the DOCX were read with OCR. "
+               "OCR can make small mistakes."
+           )
+       if images.missing:
+           warnings.append(
+               "The DOCX has pictures, but OCR is not installed, so text inside pictures "
+               "is not read (pip install rapidocr)."
+           )
+       if images.skipped:
+           warnings.append(
+               f"OCR was limited to {settings.OCR_MAX_IMAGES} pictures, "
+               f"so {images.skipped} picture(s) were skipped."
+           )
+       return _paragraphs_to_pages(items), warnings
 
 
 def _read_txt(path: Path) -> tuple[list[Page], list[str]]:
