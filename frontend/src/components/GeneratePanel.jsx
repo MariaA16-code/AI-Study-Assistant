@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { generateQuestions, getChapters, startQuiz } from '../api.js'
 import { saveQuiz } from '../utils/quizStorage.js'
@@ -23,6 +23,64 @@ const ERROR_TEXT = {
   llm_unavailable: 'The AI is busy. Please try again in a minute.',
   chapter_not_found: 'Chapter not found. Choose another chapter, or "All chapters".',
   no_content: 'There is no content to make questions from.',
+}
+
+
+// extra requests to make when some questions are rejected or a request fails
+const MAX_RETRIES = 2
+
+// pause helper: the free AI plan has a rate limit, so requests are spaced out
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Split a mixed set into mcq / short / long so every type is really requested.
+// 1 question: mcq. 2 questions: mcq + short. 3 or more: all three types.
+// Long is listed first because it is the heaviest request for the AI.
+function splitMixed(n) {
+  if (n <= 1) return [['mcq', n]]
+  if (n === 2) return [['mcq', 1], ['short', 1]]
+  const long = Math.max(1, Math.round(n * 0.2))
+  const short = Math.max(1, Math.round(n * 0.3))
+  const mcq = n - long - short
+  return [['long', long], ['short', short], ['mcq', mcq]].filter(([, k]) => k > 0)
+}
+
+// Ask the existing generate endpoint for `wanted` questions of one type.
+// If the backend rejects some or a request fails, wait and ask again for the missing ones.
+async function fetchOfType(docId, body, type, wanted) {
+  let got = []
+  const notes = []
+  let errorCode = ''
+  let tries = 0
+
+  while (got.length < wanted && tries <= MAX_RETRIES) {
+    tries += 1
+    const canRetry = tries <= MAX_RETRIES
+
+    let res
+    try {
+      res = await generateQuestions(docId, { ...body, question_type: type, count: wanted - got.length })
+    } catch (err) {
+      notes.push(`${type}: ${err.message}`)
+      if (canRetry) await sleep(8000)
+      continue
+    }
+
+    if (res.error) {
+      errorCode = res.error
+      notes.push(`${type}: ${res.error}`)
+      if (canRetry) await sleep(8000)
+      continue
+    }
+
+    const seen = new Set(got.map((q) => String(q.question).trim().toLowerCase()))
+    const fresh = (Array.isArray(res.questions) ? res.questions : []).filter(
+      (q) => !seen.has(String(q.question).trim().toLowerCase())
+    )
+    got = [...got, ...fresh]
+    if (Array.isArray(res.warnings)) notes.push(...res.warnings)
+  }
+
+  return { questions: got, notes, errorCode }
 }
 
 export default function GeneratePanel({ doc }) {
@@ -84,26 +142,49 @@ export default function GeneratePanel({ doc }) {
         return
       }
 
-      // normal question types: show the questions on this page
-      const result = await generateQuestions(doc.id, body)
+      // practice modes: one request per type (mixed asks for long, short and mcq separately)
+      const plan = questionType === 'mixed' ? splitMixed(safeCount) : [[questionType, safeCount]]
 
-      if (result.error) {
-        setError(ERROR_TEXT[result.error] || 'Could not create the questions.')
-        return
+      let list = []
+      const notes = []
+      let firstCode = ''
+
+      for (const [index, [type, wanted]] of plan.entries()) {
+        if (index > 0) await sleep(5000)
+        const part = await fetchOfType(doc.id, body, type, wanted)
+        list = [...list, ...part.questions]
+        notes.push(...part.notes)
+        if (part.errorCode && !firstCode) firstCode = part.errorCode
       }
-      const list = Array.isArray(result.questions) ? result.questions : []
+
+      // keep the usual reading order: mcq first, then short, then long
+      const order = { mcq: 0, short: 1, long: 2 }
+      list = list
+        .map((q, i) => ({ q, i }))
+        .sort((a, b) => (order[a.q.type] ?? 3) - (order[b.q.type] ?? 3) || a.i - b.i)
+        .map((x) => x.q)
+
+      const why = [...new Set(notes)].join(' | ')
+
       if (list.length === 0) {
-        const why = Array.isArray(result.warnings) ? result.warnings.join(' | ') : ''
-        setError('No questions were created. ' + (why ? 'Reason: ' + why : 'Try again, or choose different options.'))
+        if (firstCode) setError(ERROR_TEXT[firstCode] || 'Could not create the questions.')
+        else setError('No questions were created. ' + (why ? 'Reason: ' + why : 'Try again, or choose different options.'))
         return
       }
 
       setSolved(list)
-      const warns = Array.isArray(result.warnings) ? result.warnings.join(' | ') : ''
-      if (warns) setNotice('Backend notes: ' + warns)
-      if (list.length < safeCount) {
-        setNotice(`Only ${list.length} of ${safeCount} questions passed the quality check. Try again for more.`)
+
+      const parts = []
+      if (questionType === 'mixed') {
+        const counts = { mcq: 0, short: 0, long: 0 }
+        list.forEach((q) => { if (counts[q.type] !== undefined) counts[q.type] += 1 })
+        parts.push(`Mixed set: ${counts.mcq} MCQ, ${counts.short} short, ${counts.long} long.`)
       }
+      if (list.length < safeCount) {
+        parts.push(`Only ${list.length} of ${safeCount} questions passed the quality check.`)
+        if (why) parts.push('Backend notes: ' + why)
+      }
+      if (parts.length) setNotice(parts.join(' '))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -167,7 +248,7 @@ export default function GeneratePanel({ doc }) {
               <Spinner size={26} />
               <div>
                 <strong>{isQuiz ? 'Creating your quiz...' : 'Creating your questions...'}</strong>
-                <p>This can take from 10 seconds to a minute. Please keep this page open.</p>
+                <p>This can take from 10 seconds to a few minutes. Please keep this page open.</p>
               </div>
             </div>
           ) : (
@@ -189,4 +270,3 @@ export default function GeneratePanel({ doc }) {
     </>
   )
 }
-
