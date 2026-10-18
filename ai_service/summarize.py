@@ -21,7 +21,11 @@ _OVERVIEW_RE = re.compile(
     r".{0,20}\b(?:about|cover|covers|contain|contains|discuss|discusses)\b",
     re.IGNORECASE,
 )
-_CHAPTER_NUM_RE = re.compile(r"\bchapter\s+(\d+)\b", re.IGNORECASE)
+_CHAPTER_NUM_RE = re.compile(
+    r"\b(?:chap(?:ter)?|ch|unit|lesson)\.?\s*(\d+)\b"
+    r"|\b(\d+)(?:st|nd|rd|th)\s+(?:chap(?:ter)?|unit|lesson)\b",
+    re.IGNORECASE,
+)
 _GENERIC = frozenset(
     "summarize summarise summary summaries overview main topic topics idea ideas point "
     "points theme themes key takeaway takeaways gist document book file notes material "
@@ -43,8 +47,9 @@ def wants_overview(question: str, chapters: list[str]) -> tuple[bool, str | None
         return False, None
     m = _CHAPTER_NUM_RE.search(q)
     if m:
+        num = m.group(1) or m.group(2)
         for name in chapters:
-            if re.match(rf"chapter\s+{m.group(1)}\b", name, re.IGNORECASE):
+            if re.match(rf"(?:chapter|unit|lesson)\s+{num}\b", name, re.IGNORECASE):
                 return True, name
         return False, None  # asks about a chapter this document does not have
     if any(t not in _GENERIC for t in tokenize(q)):

@@ -23,7 +23,6 @@ LLM_RETRY_DELAY = config("LLM_RETRY_DELAY", default=1.0, cast=float)  # seconds,
 SUMMARY_PASSAGES = config("SUMMARY_PASSAGES", default=14, cast=int)
 GEN_EXTRA_ROUNDS = config("GEN_EXTRA_ROUNDS", default=4, cast=int)  # extra tries to reach the count
 GEN_EXTRA_CANDIDATES = config("GEN_EXTRA_CANDIDATES", default=3, cast=int)  # spare questions asked per call
-GEN_BUDGET = config("GEN_BUDGET", default=60, cast=int)  # seconds; no new rounds after this
 # OCR for scanned PDFs (pages without a text layer)
 OCR_ENABLED = config("OCR_ENABLED", default=True, cast=bool)
 OCR_MAX_PAGES = config("OCR_MAX_PAGES", default=150, cast=int)  # most scanned pages read per file

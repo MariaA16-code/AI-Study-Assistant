@@ -7,13 +7,28 @@ from . import settings
 from .generate import list_chapters
 from .llm import LLMError, ask_llm
 from .prompts import SYSTEM_ANSWER, build_answer_prompt
-from .retrieve import retrieve
+from .retrieve import retrieve, tokenize
+from .store import get_all_chunks
 from .summarize import summarize, wants_overview
 
 logger = logging.getLogger(__name__)
 
 NOT_FOUND_TEXT = "I couldn't find this in the uploaded material."
 MAX_SOURCES = 3
+
+# Text that extract.py writes for a described picture or page starts with this mark.
+FIGURE_MARK = "[Figure]"
+MAX_FIGURE_CHUNKS = 4  # most figure descriptions sent with one question
+_IMAGE_RE = re.compile(
+    r"\b(images?|pictures?|figures?|fig|diagrams?|charts?|graphs?|screenshots?|"
+    r"photos?|illustrations?|flowcharts?|drawings?)\b",
+    re.IGNORECASE,
+)
+
+
+def asks_about_image(question: str) -> bool:
+    """Does the question talk about a picture, figure, diagram or chart?"""
+    return bool(_IMAGE_RE.search(question or ""))
 
 
 def _not_found(error: str | None = None) -> dict:
@@ -58,6 +73,34 @@ def _summary_result(res: dict) -> dict:
     return {"answer": text, "found": True, "sources": res["sources"], "mode": "summary"}
 
 
+def _figure_hits(document_id: int, question: str) -> list[dict]:
+    """Figure descriptions (and the chunk after each) that best fit the question."""
+    chunks = get_all_chunks(document_id)
+    figures = [c for c in chunks if FIGURE_MARK in c["text"]]
+    if not figures:
+        return []
+    by_index = {c["chunk_index"]: c for c in chunks}
+    q_tokens = set(tokenize(question))
+    # best word overlap first; ties keep document order (sort is stable)
+    ranked = sorted(figures, key=lambda c: -len(q_tokens & set(tokenize(c["text"]))))
+    picked: list[dict] = []
+    for c in ranked[:MAX_FIGURE_CHUNKS]:
+        picked.append(c)
+        nxt = by_index.get(c["chunk_index"] + 1)
+        if nxt is not None and nxt["page_start"] <= c["page_end"]:  # same page only
+            picked.append(nxt)
+    return picked
+
+
+def _merge(first: list[dict], second: list[dict]) -> list[dict]:
+    merged, seen = [], set()
+    for h in first + second:
+        if h["chunk_index"] not in seen:
+            seen.add(h["chunk_index"])
+            merged.append(h)
+    return merged[: settings.TOP_K + 2 * MAX_FIGURE_CHUNKS]
+
+
 def answer(document_id: int, question: str) -> dict:
     question = (question or "").strip()
     if not question:
@@ -75,8 +118,13 @@ def answer(document_id: int, question: str) -> dict:
 
     result = retrieve(document_id, question, k=settings.TOP_K)
     hits = result["hits"]
+
+    # Questions about a picture: always show the model the figure descriptions.
+    figure_hits = _figure_hits(document_id, question) if asks_about_image(question) else []
+    if figure_hits:
+        hits = _merge(figure_hits, hits)  # figures first; skip the MIN_SCORE cutoff
     # Cheap guard: nothing even loosely related, so skip the LLM call.
-    if not hits or result["best_vector_score"] < settings.MIN_SCORE:
+    elif not hits or result["best_vector_score"] < settings.MIN_SCORE:
         return _not_found()
 
     prompt = build_answer_prompt(question, hits)

@@ -108,26 +108,26 @@ def _boxes_to_text(items: list[tuple[float, float, float, float, str]]) -> str:
 
 
 def _ocr_image(image) -> str:
-       """Read the text in a PIL image with OCR. Raises ImportError when rapidocr is not installed."""
-       import numpy as np
+    """Read the text in a PIL image with OCR. Raises ImportError when rapidocr is not installed."""
+    import numpy as np
 
-       engine = _get_ocr_engine()
-       result = engine(np.array(image.convert("RGB")))
-       if result is None or result.boxes is None or result.txts is None:
-           return ""
-       items = []
-       for box, text, score in zip(result.boxes, result.txts, result.scores):
-           if float(score) < 0.5 or not str(text).strip():  # skip uncertain noise
-               continue
-           xs = [pt[0] for pt in box]
-           ys = [pt[1] for pt in box]
-           items.append((min(xs), min(ys), max(xs), max(ys), str(text).strip()))
-       return _boxes_to_text(items)
+    engine = _get_ocr_engine()
+    result = engine(np.array(image.convert("RGB")))
+    if result is None or result.boxes is None or result.txts is None:
+        return ""
+    items = []
+    for box, text, score in zip(result.boxes, result.txts, result.scores):
+        if float(score) < 0.5 or not str(text).strip():  # skip uncertain noise
+            continue
+        xs = [pt[0] for pt in box]
+        ys = [pt[1] for pt in box]
+        items.append((min(xs), min(ys), max(xs), max(ys), str(text).strip()))
+    return _boxes_to_text(items)
 
 
 def _ocr_page_text(page) -> str:
-       """Read a scanned PDF page with OCR."""
-       return _ocr_image(page.to_image(resolution=settings.OCR_DPI).original)
+    """Read a scanned PDF page with OCR."""
+    return _ocr_image(page.to_image(resolution=settings.OCR_DPI).original)
 
 
 def _read_pdf(path: Path) -> tuple[list[Page], list[str]]:
@@ -224,125 +224,125 @@ def _docx_blocks(document):
 
 
 class _DocxImages:
-       """Reads the text inside pictures of a DOCX with OCR. Each distinct picture is read once."""
+    """Reads the text inside pictures of a DOCX with OCR. Each distinct picture is read once."""
 
-       MIN_SIDE = 60  # smaller pictures are icons or bullets, not worth reading
+    MIN_SIDE = 60  # smaller pictures are icons or bullets, not worth reading
 
-       def __init__(self, document):
-           self.document = document
-           self.cache: dict[str, list[str]] = {}
-           self.attempts = 0
-           self.with_text = 0
-           self.skipped = 0
-           self.missing = False
+    def __init__(self, document):
+        self.document = document
+        self.cache: dict[str, list[str]] = {}
+        self.attempts = 0
+        self.with_text = 0
+        self.skipped = 0
+        self.missing = False
 
-       def lines(self, paragraph) -> list[str]:
-           """Text lines found in the pictures of one paragraph (empty when there are none)."""
-           if not settings.OCR_ENABLED or self.missing:
-               return []
-           found = []
-           for rid in paragraph._p.xpath(".//a:blip/@r:embed"):
-               part = self.document.part.related_parts.get(rid)
-               if part is None:
-                   continue
-               key = hashlib.md5(part.blob).hexdigest()
-               if key not in self.cache:
-                   self.cache[key] = self._read(part.blob)
-               found.extend(self.cache[key])
-           return found
+    def lines(self, paragraph) -> list[str]:
+        """Text lines found in the pictures of one paragraph (empty when there are none)."""
+        if not settings.OCR_ENABLED or self.missing:
+            return []
+        found = []
+        for rid in paragraph._p.xpath(".//a:blip/@r:embed"):
+            part = self.document.part.related_parts.get(rid)
+            if part is None:
+                continue
+            key = hashlib.md5(part.blob).hexdigest()
+            if key not in self.cache:
+                self.cache[key] = self._read(part.blob)
+            found.extend(self.cache[key])
+        return found
 
-       def _read(self, blob: bytes) -> list[str]:
-           from PIL import Image
+    def _read(self, blob: bytes) -> list[str]:
+        from PIL import Image
 
-           try:
-               image = Image.open(io.BytesIO(blob))
-               if min(image.size) < self.MIN_SIDE:
-                   return []
-               if self.attempts >= settings.OCR_MAX_IMAGES:
-                   self.skipped += 1
-                   return []
-               self.attempts += 1
-               text = _ocr_image(image)
-           except ImportError:
-               self.missing = True
-               return []
-           except Exception:  # unsupported picture formats such as EMF or WMF
-               logger.warning("Could not read a picture inside the DOCX", exc_info=True)
-               return []
-           lines = []
-           for line in text.splitlines():
-               if CHAPTER_RE.match(line):  # a line inside a picture must never start a new chapter
-                   line = "- " + line
-               lines.append(line)
-           if lines:
-               self.with_text += 1
-           return lines
+        try:
+            image = Image.open(io.BytesIO(blob))
+            if min(image.size) < self.MIN_SIDE:
+                return []
+            if self.attempts >= settings.OCR_MAX_IMAGES:
+                self.skipped += 1
+                return []
+            self.attempts += 1
+            text = _ocr_image(image)
+        except ImportError:
+            self.missing = True
+            return []
+        except Exception:  # unsupported picture formats such as EMF or WMF
+            logger.warning("Could not read a picture inside the DOCX", exc_info=True)
+            return []
+        lines = []
+        for line in text.splitlines():
+            if CHAPTER_RE.match(line):  # a line inside a picture must never start a new chapter
+                line = "- " + line
+            lines.append(line)
+        if lines:
+            self.with_text += 1
+        return lines
 
 
 def _table_rows(table, images: "_DocxImages | None" = None) -> list[str]:
-       """One text line per table row, cells joined with ' | ' (merged cells are counted once).
+    """One text line per table row, cells joined with ' | ' (merged cells are counted once).
 
-       Tables nested inside a cell, and text inside pictures in a cell, are read right after the row.
-       """
-       rows = []
-       for row in table.rows:
-           cells, seen, nested, extra = [], set(), [], []
-           for cell in row.cells:
-               if id(cell._tc) in seen:  # a merged cell shows up once per column it spans
-                   continue
-               seen.add(id(cell._tc))
-               text = " ".join(cell.text.split())
-               if text:
-                   cells.append(text)
-               nested.extend(cell.tables)
-               if images is not None:
-                   for paragraph in cell.paragraphs:
-                       extra.extend(images.lines(paragraph))
-           line = " | ".join(cells)
-           if line:
-               if CHAPTER_RE.match(line):  # a table row must never start a new chapter
-                   line = "- " + line
-               rows.append(line)
-           rows.extend(extra)
-           for inner in nested:
-               rows.extend(_table_rows(inner, images))
-       return rows
+    Tables nested inside a cell, and text inside pictures in a cell, are read right after the row.
+    """
+    rows = []
+    for row in table.rows:
+        cells, seen, nested, extra = [], set(), [], []
+        for cell in row.cells:
+            if id(cell._tc) in seen:  # a merged cell shows up once per column it spans
+                continue
+            seen.add(id(cell._tc))
+            text = " ".join(cell.text.split())
+            if text:
+                cells.append(text)
+            nested.extend(cell.tables)
+            if images is not None:
+                for paragraph in cell.paragraphs:
+                    extra.extend(images.lines(paragraph))
+        line = " | ".join(cells)
+        if line:
+            if CHAPTER_RE.match(line):  # a table row must never start a new chapter
+                line = "- " + line
+            rows.append(line)
+        rows.extend(extra)
+        for inner in nested:
+            rows.extend(_table_rows(inner, images))
+    return rows
 
 
 def _read_docx(path: Path) -> tuple[list[Page], list[str]]:
-       import docx
-       from docx.text.paragraph import Paragraph
+    import docx
+    from docx.text.paragraph import Paragraph
 
-       document = docx.Document(str(path))
-       images = _DocxImages(document)
-       items = []
-       for block in _docx_blocks(document):
-           if isinstance(block, Paragraph):
-               text = block.text.strip()
-               if text:
-                   style = block.style.name if block.style is not None else ""
-                   items.append((text, style.startswith("Heading 1")))
-               items.extend((line, False) for line in images.lines(block))
-           else:
-               items.extend((row, False) for row in _table_rows(block, images))
+    document = docx.Document(str(path))
+    images = _DocxImages(document)
+    items = []
+    for block in _docx_blocks(document):
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            if text:
+                style = block.style.name if block.style is not None else ""
+                items.append((text, style.startswith("Heading 1")))
+            items.extend((line, False) for line in images.lines(block))
+        else:
+            items.extend((row, False) for row in _table_rows(block, images))
 
-       warnings = ["DOCX has no fixed pages; page numbers are approximate sections."]
-       if images.with_text:
-           warnings.append(
-               f"{images.with_text} picture(s) in the DOCX were read with OCR. "
-               "OCR can make small mistakes."
-           )
-       if images.missing:
-           warnings.append(
-               "The DOCX has pictures, but OCR is not installed, so text inside pictures "
-               "is not read (pip install rapidocr)."
-           )
-       if images.skipped:
-           warnings.append(
-               f"OCR was limited to {settings.OCR_MAX_IMAGES} pictures, "
-               f"so {images.skipped} picture(s) were skipped."
-           )
-       return _paragraphs_to_pages(items), warnings
+    warnings = ["DOCX has no fixed pages; page numbers are approximate sections."]
+    if images.with_text:
+        warnings.append(
+            f"{images.with_text} picture(s) in the DOCX were read with OCR. "
+            "OCR can make small mistakes."
+        )
+    if images.missing:
+        warnings.append(
+            "The DOCX has pictures, but OCR is not installed, so text inside pictures "
+            "is not read (pip install rapidocr)."
+        )
+    if images.skipped:
+        warnings.append(
+            f"OCR was limited to {settings.OCR_MAX_IMAGES} pictures, "
+            f"so {images.skipped} picture(s) were skipped."
+        )
+    return _paragraphs_to_pages(items), warnings
 
 
 def _read_txt(path: Path) -> tuple[list[Page], list[str]]:
