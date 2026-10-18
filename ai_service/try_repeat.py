@@ -5,11 +5,12 @@ from .api import generate_questions
 DOC_ID = 5      # your report's id in the backend (the id Swagger showed)
 RUNS = 8
 COUNT = 5
-
+TYPE = "mixed"   # try "long", then "mixed"
+COUNT = 10       #try 5 then 10
 full = 0
 for i in range(RUNS):
     t = time.time()
-    res = generate_questions(DOC_ID, "mcq", "medium", COUNT)
+    res = generate_questions(DOC_ID, TYPE, "medium", COUNT)
     got = len(res["questions"])
     full += got == COUNT
     print(

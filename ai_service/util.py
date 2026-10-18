@@ -9,7 +9,7 @@ def extract_json(raw: str) -> dict | None:
     if start == -1 or end <= start:
         return None
     try:
-        data = json.loads(text[start : end + 1])
+       data = json.loads(text[start : end + 1], strict=False)
     except json.JSONDecodeError:
         return None
     return data if isinstance(data, dict) else None

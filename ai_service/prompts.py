@@ -66,9 +66,12 @@ _KIND_RULES = {
         '{"passage": 1, "question": "...", "model_answer": "one to three sentences"}',
     ),
     "long": (
-        "Write long-answer questions that need a full paragraph (explain, discuss, "
-        "compare or describe). The model answer is a thorough paragraph.",
-        '{"passage": 1, "question": "...", "model_answer": "a thorough paragraph"}',
+        "Write long-answer questions that need a full paragraph (explain, describe or "
+        "compare). The model answer is ONE paragraph of 60 to 150 words. Build it only "
+        "from the facts and wording of that passage: do not add examples, causes or "
+        "background that the passage does not state.",
+        '{"passage": 1, "question": "...", "model_answer": "one paragraph of 60 to 150 words, '
+        'using only facts from the passage"}',
     ),
 }
 
