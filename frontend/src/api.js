@@ -39,6 +39,7 @@ const ERROR_MESSAGES = {
   llm_unavailable: AI_BUSY,
   chapter_not_found: 'Chapter not found. Choose another chapter, or "All chapters".',
   no_content: 'There is no content to make questions from.',
+  ai_failed: AI_BUSY,
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -104,11 +105,15 @@ async function request(path, options = {}, needsAuth = true) {
     if (ERROR_MESSAGES[data.error]) {
       message = ERROR_MESSAGES[data.error]
     } else if (res.status === 502) {
-      message = AI_BUSY
+      // a 502 without an error code comes from the dev proxy, so the backend is not running
+      message = 'Cannot reach the server. Check that the backend is running.'
+    } else if (res.status === 403) {
+      message = data.detail || 'You do not have permission to do this.'
     } else if (res.status === 404) {
       message = 'Not found. It may have been deleted, or it belongs to another account.'
     } else if (res.status === 422) {
-      message = 'No questions could be created. Try another chapter, or fewer questions.'
+      const why = Array.isArray(data.warnings) && data.warnings.length ? ` ${data.warnings[0]}` : ''
+      message = (data.detail || 'No questions could be created. Try another chapter, or fewer questions.') + why
     } else if (res.status === 409) {
       message = data.detail || 'The document is not ready yet, or the quiz was already submitted.'
     } else {
