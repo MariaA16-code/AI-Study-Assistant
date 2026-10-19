@@ -70,7 +70,6 @@ export default function Documents() {
         </label>
       </div>
       <p className="hint">PDF, DOCX or TXT, up to 25 MB.</p>
-      <p className="hint">Scanned PDFs (pictures of pages) cannot be read, and tables inside DOCX files are not read yet.</p>
 
       {message && <p className="error">{message}</p>}
       {loading && <p>Loading documents...</p>}
@@ -84,9 +83,6 @@ export default function Documents() {
               <span className={`badge badge-${isFinished(doc.status) ? doc.status : 'processing'}`}>
                 {doc.status}
               </span>
-              {doc.warnings.map((w, i) => (
-                <p key={i} className="warning">{w}</p>
-              ))}
             </div>
             <div className="card-actions">
               {doc.status === 'ready' && (
