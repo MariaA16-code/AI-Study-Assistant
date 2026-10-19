@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import settings
+from .vision import describe_many, figure_lines, vision_available
 
 logger = logging.getLogger(__name__)
 
@@ -130,16 +131,53 @@ def _ocr_page_text(page) -> str:
     return _ocr_image(page.to_image(resolution=settings.OCR_DPI).original)
 
 
+FIG_MIN_SIDE = 100  # points; an embedded picture smaller than this is an icon or bullet
+FIG_MIN_AREA = 0.04  # share of the page an embedded picture must cover
+FIG_VECTOR_MIN = 4  # boxes + curves on a page that make it a drawn diagram or chart
+FIG_REPEAT_PAGES = 3  # a picture on this many pages (and over 30% of them) is a logo or background
+
+
+def _picture_ids(page) -> set:
+    """Ids of the large embedded pictures on a page (small ones are icons)."""
+    area = float(page.width * page.height) or 1.0
+    found = set()
+    for img in page.images:
+        w = abs(float(img["x1"]) - float(img["x0"]))
+        h = abs(float(img["bottom"]) - float(img["top"]))
+        if w < FIG_MIN_SIDE or h < FIG_MIN_SIDE or (w * h) / area < FIG_MIN_AREA:
+            continue
+        stream = img.get("stream")
+        ident = getattr(stream, "objid", None)
+        found.add(ident if ident is not None else (round(w), round(h), img.get("name")))
+    return found
+
+
+def _has_drawn_figure(page) -> bool:
+    """Boxes and curves drawn on the page: a flowchart, UML box, bar chart or similar."""
+    area = float(page.width * page.height) or 1.0
+    shapes = len(page.curves)
+    for rect in page.rects:
+        w, h = float(rect["width"]), float(rect["height"])
+        if w < 8 or h < 8 or (w * h) / area > 0.9:  # table rules, thin lines, page background
+            continue
+        shapes += 1
+    return shapes >= FIG_VECTOR_MIN
+
+
 def _read_pdf(path: Path) -> tuple[list[Page], list[str]]:
     import pdfplumber
 
     pages: list[Page] = []
     empty = ocr_used = ocr_skipped = 0
     ocr_missing = False
+    fig_used = fig_failed = fig_skipped = 0
     with pdfplumber.open(str(path)) as pdf:
+        picture_ids: list[set] = []
+        drawn: list[bool] = []
         for i, p in enumerate(pdf.pages, start=1):
             text = (p.extract_text() or "").strip()
-            if len(text) < MIN_TEXT_CHARS and settings.OCR_ENABLED and not ocr_missing:
+            scanned = len(text) < MIN_TEXT_CHARS
+            if scanned and settings.OCR_ENABLED and not ocr_missing:
                 if ocr_used >= settings.OCR_MAX_PAGES:
                     ocr_skipped += 1
                 else:
@@ -155,6 +193,52 @@ def _read_pdf(path: Path) -> tuple[list[Page], list[str]]:
             if not text:
                 empty += 1
             pages.append(Page(i, text))
+            # pages without a text layer are read by OCR only; vision looks at the others
+            if scanned or not vision_available():
+                picture_ids.append(set())
+                drawn.append(False)
+            else:
+                try:
+                    picture_ids.append(_picture_ids(p))
+                    drawn.append(_has_drawn_figure(p))
+                except Exception:
+                    logger.warning("Could not look for figures on page %s", i, exc_info=True)
+                    picture_ids.append(set())
+                    drawn.append(False)
+
+        if vision_available():
+            counts: dict = {}
+            for ids in picture_ids:
+                for ident in ids:
+                    counts[ident] = counts.get(ident, 0) + 1
+            repeated = {
+                ident
+                for ident, n in counts.items()
+                if n >= FIG_REPEAT_PAGES and n > 0.3 * len(pages)
+            }
+            flagged = [
+                idx for idx in range(len(pages))
+                if drawn[idx] or (picture_ids[idx] - repeated)
+            ]
+            fig_skipped = max(0, len(flagged) - settings.VISION_MAX_PAGES)
+            flagged = flagged[: settings.VISION_MAX_PAGES]
+            images = []
+            for idx in flagged:
+                try:
+                    images.append(pdf.pages[idx].to_image(resolution=settings.VISION_DPI).original)
+                except Exception:
+                    logger.warning("Could not render page %s for vision", idx + 1, exc_info=True)
+                    images.append(None)
+            todo = [(idx, img) for idx, img in zip(flagged, images) if img is not None]
+            fig_failed += len(flagged) - len(todo)
+            results = describe_many([img for _, img in todo], page=True)
+            for (idx, _), description in zip(todo, results):
+                if description is None:
+                    fig_failed += 1
+                elif description:
+                    lines = figure_lines(description)
+                    pages[idx].text = (pages[idx].text + "\n" + "\n".join(lines)).strip()
+                    fig_used += 1
 
     current = None
     for page in pages:
@@ -174,6 +258,18 @@ def _read_pdf(path: Path) -> tuple[list[Page], list[str]]:
     if ocr_skipped:
         warnings.append(
             f"OCR was limited to {settings.OCR_MAX_PAGES} pages, so {ocr_skipped} scanned page(s) were skipped."
+        )
+    if fig_used:
+        warnings.append(
+            f"{fig_used} page(s) with diagrams, charts or pictures were described with AI vision. "
+            "Descriptions can contain mistakes, especially arrow directions."
+        )
+    if fig_failed:
+        warnings.append(f"AI vision could not describe {fig_failed} page(s) with figures.")
+    if fig_skipped:
+        warnings.append(
+            f"AI vision was limited to {settings.VISION_MAX_PAGES} pages, "
+            f"so {fig_skipped} page(s) with figures were not described."
         )
     if pages and empty / len(pages) > 0.5:
         warnings.append(
@@ -235,11 +331,54 @@ class _DocxImages:
         self.with_text = 0
         self.skipped = 0
         self.missing = False
+        self.vision_used = 0
+        self.vision_failed = 0
+        self.vision_skipped = 0
+
+    def _open(self, blob: bytes):
+        """The picture as a PIL image, or None when it is too small or cannot be opened."""
+        from PIL import Image
+
+        try:
+            image = Image.open(io.BytesIO(blob))
+            image.load()
+        except Exception:  # unsupported picture formats such as EMF or WMF
+            return None
+        return None if min(image.size) < self.MIN_SIDE else image
+
+    def prefetch(self) -> None:
+        """Describe all pictures with vision first (a few at a time). Failures fall back to OCR."""
+        if not vision_available():
+            return
+        keys, images = [], []
+        seen = set()
+        for rid in self.document.element.body.xpath(".//a:blip/@r:embed"):
+            part = self.document.part.related_parts.get(rid)
+            if part is None:
+                continue
+            key = hashlib.md5(part.blob).hexdigest()
+            if key in seen:
+                continue
+            seen.add(key)
+            image = self._open(part.blob)
+            if image is None:
+                continue
+            if len(images) >= settings.VISION_MAX_IMAGES:
+                self.vision_skipped += 1
+                continue
+            keys.append(key)
+            images.append(image)
+        for key, description in zip(keys, describe_many(images)):
+            if description is None:
+                self.vision_failed += 1  # not cached, so lines() reads it with OCR
+                continue
+            lines = figure_lines(description)
+            self.cache[key] = lines
+            if lines:
+                self.vision_used += 1
 
     def lines(self, paragraph) -> list[str]:
         """Text lines found in the pictures of one paragraph (empty when there are none)."""
-        if not settings.OCR_ENABLED or self.missing:
-            return []
         found = []
         for rid in paragraph._p.xpath(".//a:blip/@r:embed"):
             part = self.document.part.related_parts.get(rid)
@@ -247,6 +386,8 @@ class _DocxImages:
                 continue
             key = hashlib.md5(part.blob).hexdigest()
             if key not in self.cache:
+                if not settings.OCR_ENABLED or self.missing:
+                    continue  # not described by vision and OCR is unavailable
                 self.cache[key] = self._read(part.blob)
             found.extend(self.cache[key])
         return found
@@ -315,6 +456,7 @@ def _read_docx(path: Path) -> tuple[list[Page], list[str]]:
 
     document = docx.Document(str(path))
     images = _DocxImages(document)
+    images.prefetch()
     items = []
     for block in _docx_blocks(document):
         if isinstance(block, Paragraph):
@@ -327,6 +469,21 @@ def _read_docx(path: Path) -> tuple[list[Page], list[str]]:
             items.extend((row, False) for row in _table_rows(block, images))
 
     warnings = ["DOCX has no fixed pages; page numbers are approximate sections."]
+    if images.vision_used:
+        warnings.append(
+            f"{images.vision_used} picture(s) in the DOCX were described with AI vision. "
+            "Descriptions can contain mistakes, especially arrow directions."
+        )
+    if images.vision_failed:
+        warnings.append(
+            f"AI vision could not describe {images.vision_failed} picture(s); "
+            "they were read with OCR when possible."
+        )
+    if images.vision_skipped:
+        warnings.append(
+            f"AI vision was limited to {settings.VISION_MAX_IMAGES} pictures, "
+            f"so {images.vision_skipped} picture(s) were read with OCR only."
+        )
     if images.with_text:
         warnings.append(
             f"{images.with_text} picture(s) in the DOCX were read with OCR. "

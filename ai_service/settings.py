@@ -28,3 +28,13 @@ OCR_ENABLED = config("OCR_ENABLED", default=True, cast=bool)
 OCR_MAX_PAGES = config("OCR_MAX_PAGES", default=150, cast=int)  # most scanned pages read per file
 OCR_DPI = config("OCR_DPI", default=200, cast=int)  # higher = more accurate but slower
 OCR_MAX_IMAGES = config("OCR_MAX_IMAGES", default=60, cast=int)  # most pictures read per DOCX
+# Vision: Gemini describes pictures, diagrams and figure pages (needs GEMINI_API_KEY).
+# Pictures are sent to Google. Set VISION_ENABLED=False to keep everything local (OCR only).
+VISION_ENABLED = config("VISION_ENABLED", default=True, cast=bool)
+VISION_MODEL = config("VISION_MODEL", default="")  # empty = use GEMINI_MODEL
+VISION_FALLBACK_MODEL = config("VISION_FALLBACK_MODEL", default="")  # tried once when the main vision model fails
+VISION_MAX_IMAGES = config("VISION_MAX_IMAGES", default=10, cast=int)  # most pictures described per DOCX
+VISION_MAX_PAGES = config("VISION_MAX_PAGES", default=20, cast=int)  # most figure pages described per PDF
+VISION_DPI = config("VISION_DPI", default=110, cast=int)  # page render quality for PDF figure pages
+VISION_WORKERS = config("VISION_WORKERS", default=3, cast=int)  # pictures described at the same time
+VISION_TIMEOUT = config("VISION_TIMEOUT", default=40, cast=int)  # seconds per picture

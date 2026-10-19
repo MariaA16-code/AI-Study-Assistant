@@ -3,6 +3,10 @@ import pytest
 from ai_service import settings, store
 from ai_service.chunk import Chunk
 
+@pytest.fixture(autouse=True)
+def vision_off(monkeypatch):
+    """Tests never call Gemini, whatever is in the developer's .env."""
+    monkeypatch.setattr(settings, "VISION_ENABLED", False)
 
 @pytest.fixture
 def fresh_store(tmp_path, monkeypatch):
