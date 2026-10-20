@@ -165,7 +165,7 @@ Open http://localhost:5173 in your browser.
 - **DOCX**: each picture is described by Gemini, up to 10 per file. Tables made of text are read directly, row by row.
 - The descriptions are added to the page text as lines starting with `[Figure]`, so answers can cite the page. Descriptions can contain mistakes, especially arrow directions.
 - If Gemini is busy, out of quota, or `VISION_ENABLED=False`, the document still uploads and OCR reads the pictures when it can. **A document that was uploaded while vision failed stays without its diagram text. Delete it and upload it again when Gemini works.**
-- **Privacy:** pictures and figure pages are sent to Google. Set `VISION_ENABLED=False` in `.env` to keep everything on your computer.
+- **Privacy:** with vision on, pictures and figure pages are sent to google. test passages are sent to gemini (or groq) for every chat question, summary and quiz, whether vision is on or off. on the free gemini tier, google can use submitted content to improve its products, and human reviewers may need it, so use only non-private files. 'VISION_ENABLED=False' stops pictures and pages from being sent, and ocr is used instead.
 - Limits and speed settings (`VISION_MAX_PAGES`, `VISION_MAX_IMAGES`, `OCR_DPI`, `OCR_MAX_PAGES`) are in `.env.example`.
 
 ## Running the tests
