@@ -36,7 +36,7 @@ PICTURE_PROMPT = (
     "`A -> B` with its cardinality. For a screenshot of code, JSON, a terminal or an API "
     "response, copy the text it shows in order, one line per original line, after one "
     "short line saying what the screenshot is. Never write 'Line 1 contains'. Do not start "
-    "with 'This picture is'.\\n"
+    "with 'This picture is'.\n"
     + _RULES
     + "- If the picture is only a logo, icon, border or decoration with no information, "
     f"reply exactly {NONE_REPLY}."
@@ -116,17 +116,18 @@ def describe_image(image, page: bool = False) -> str | None:
     models = [None]  # None = the main model
     if settings.VISION_FALLBACK_MODEL:
         models.append(settings.VISION_FALLBACK_MODEL)
-    last = None
+    errors = []
     for model in models:
         try:
             if model is None:
                 return _clean(_call_gemini(png, prompt))
             return _clean(_call_gemini(png, prompt, model=model))
         except Exception as exc:
-            last = exc
+            errors.append(exc)
             logger.warning("Vision failed (%s): %s", model or "main model", str(exc)[:150])
-    if _is_quota_error(last) or _is_retryable(last):
-        raise last  # Google is busy: do not keep asking for the other images
+    for exc in errors:  # busy or out of quota on ANY try, even if the backup model failed differently
+        if _is_quota_error(exc) or _is_retryable(exc):
+            raise exc  # Google is busy: do not keep asking for the other images
     return None
 
 
