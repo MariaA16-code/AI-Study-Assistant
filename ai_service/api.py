@@ -3,7 +3,8 @@ AI service contract. The backend calls ONLY these functions.
 Heavy libraries are imported inside the functions, so `import ai_service`
 works even where the AI libraries are not installed yet.
 """
-import logging
+
+import logging, time 
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,12 @@ def process_document(document_id: int, file_path: str) -> dict:
             "warnings": (warnings or []) + [msg],
         }
 
+    t0 = time.perf_counter()
     try:
         doc = extract_document(file_path)
+        t1 = time.perf_counter()
         chunks = chunk_pages(doc.pages)
+        t2 = time.perf_counter()
     except (FileNotFoundError, ValueError) as exc:
         return failed(str(exc))
     except Exception:
@@ -42,9 +46,15 @@ def process_document(document_id: int, file_path: str) -> dict:
         )
     try:
         store_chunks(document_id, chunks)
+        t3 = time.perf_counter()
     except Exception:
         logger.exception("Could not store document %s", document_id)
         return failed("The document could not be stored for search.", pages=len(doc.pages))
+
+    logger.info(
+        "process_document %s: extract %.1fs, chunk %.1fs, embed+store %.1fs, total %.1fs",
+        document_id, t1 - t0, t2 - t1, t3 - t2, t3 - t0,
+    )
 
     return {
         "status": "ready",
@@ -52,7 +62,6 @@ def process_document(document_id: int, file_path: str) -> dict:
         "chunks": len(chunks),
         "warnings": list(doc.warnings),
     }
-
 
 def answer_question(document_id: int, question: str) -> dict:
     """Answer only from the document. If nothing relevant, found=False.
@@ -129,3 +138,9 @@ def delete_document(document_id: int) -> None:
     from .store import delete_document as _delete
 
     _delete(document_id)
+
+def warm_up() -> None:
+    """Call once when the server starts (ideally in a background thread)."""
+    from .store import warm_up as _warm
+
+    _warm()   
