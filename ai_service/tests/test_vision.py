@@ -14,6 +14,7 @@ FLOW = "Flowchart\nLogin -> Check password\nCheck password -> Dashboard"
 def vision_on(monkeypatch):
     monkeypatch.setattr(settings, "VISION_ENABLED", True)
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "VISION_FALLBACK_MODEL", "")  # not the value from the developer's .env
     calls = []
 
     def fake(png, prompt):
@@ -280,3 +281,18 @@ def test_docx_vision_works_with_ocr_off(tmp_path, vision_on, monkeypatch):
     monkeypatch.setattr(settings, "OCR_ENABLED", False)
     doc = extract_document(str(_docx_with_picture(tmp_path)))
     assert "[Figure] Login -> Check password" in "\n".join(p.text for p in doc.pages)
+
+def test_busy_main_model_stops_the_rest_even_if_the_backup_name_is_wrong(vision_on, monkeypatch):
+    monkeypatch.setattr(settings, "VISION_WORKERS", 1)
+    monkeypatch.setattr(settings, "VISION_FALLBACK_MODEL", "no-such-model")
+    calls = []
+
+    def fake(png, prompt, model=None):
+        calls.append(model)
+        if model is None:
+            raise RuntimeError("503 UNAVAILABLE high demand")
+        raise RuntimeError("404 NOT_FOUND model not found")
+
+    monkeypatch.setattr(vision, "_call_gemini", fake)
+    assert vision.describe_many([Image.new("RGB", (10, 10))] * 4) == [None] * 4
+    assert calls == [None, "no-such-model"]  # only the first picture was tried    
