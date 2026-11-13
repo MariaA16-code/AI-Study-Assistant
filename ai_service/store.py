@@ -1,29 +1,41 @@
 """Embeddings (fastembed) + ChromaDB storage, one collection per document."""
+import threading
+
 from . import settings
 from .chunk import Chunk
 
 BATCH = 64
 _model = None
 _client = None
+_lock = threading.Lock()  # two uploads at once must not load the model twice
 
 
 def _embedder():
     global _model
     if _model is None:
-        from fastembed import TextEmbedding
+        with _lock:
+            if _model is None:
+                from fastembed import TextEmbedding
 
-        _model = TextEmbedding(settings.EMBED_MODEL)
+                _model = TextEmbedding(settings.EMBED_MODEL)
     return _model
 
 
 def _chroma():
     global _client
     if _client is None:
-        import chromadb
+        with _lock:
+            if _client is None:
+                import chromadb
 
-        _client = chromadb.PersistentClient(path=settings.CHROMA_DIR)
+                _client = chromadb.PersistentClient(path=settings.CHROMA_DIR)
     return _client
 
+
+def warm_up() -> None:
+    """Load the model and open the database once, so the first upload is not slow."""
+    _chroma()
+    list(_embedder().embed(["warm up"]))
 
 def collection_name(document_id: int) -> str:
     return f"doc_{document_id}"  # ChromaDB needs 3+ characters

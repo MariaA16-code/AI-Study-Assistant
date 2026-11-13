@@ -163,6 +163,77 @@ def _has_drawn_figure(page) -> bool:
         shapes += 1
     return shapes >= FIG_VECTOR_MIN
 
+_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
+
+class _FastPdf:
+    """Quick page text and a cheap figure pre-check using pypdfium2 (installed with pdfplumber).
+
+    If pypdfium2 is missing or fails, text() returns None and may_have_figure() returns True,
+    so the caller falls back to the slower pdfplumber code for that page.
+    """
+
+    def __init__(self, path: Path):
+        self.doc = None
+        self.raw = None
+        if not settings.PDF_FAST_TEXT:
+            return
+        try:
+            import pypdfium2 as pdfium
+            import pypdfium2.raw as pdfium_c
+
+            self.raw = pdfium_c
+            self.doc = pdfium.PdfDocument(str(path))
+        except Exception:
+            logger.warning("pypdfium2 not usable, reading PDF text with pdfplumber", exc_info=True)
+            self.doc = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        if self.doc is not None:
+            try:
+                self.doc.close()
+            except Exception:
+                pass
+        return False
+
+    def text(self, index: int) -> str | None:
+        """Text of page `index` (0-based), or None when the fast reader cannot be used."""
+        if self.doc is None:
+            return None
+        try:
+            page = self.doc[index]
+            try:
+                textpage = page.get_textpage()
+                try:
+                    raw = textpage.get_text_range()
+                finally:
+                    textpage.close()
+            finally:
+                page.close()
+        except Exception:
+            logger.warning("Fast text failed on page %s", index + 1, exc_info=True)
+            return None
+        raw = _CTRL_RE.sub("", raw.replace("\r\n", "\n").replace("\r", "\n"))
+        return "\n".join(line.rstrip() for line in raw.split("\n")).strip()
+
+    def may_have_figure(self, index: int) -> bool:
+        """False only when the page has no pictures and no drawn shapes at all."""
+        if self.doc is None:
+            return True
+        try:
+            page = self.doc[index]
+            try:
+                kinds = (self.raw.FPDF_PAGEOBJ_IMAGE, self.raw.FPDF_PAGEOBJ_PATH)
+                for _ in page.get_objects(filter=kinds):
+                    return True
+                return False
+            finally:
+                page.close()
+        except Exception:
+            logger.warning("Figure pre-check failed on page %s", index + 1, exc_info=True)
+            return True
 
 def _read_pdf(path: Path) -> tuple[list[Page], list[str]]:
     import pdfplumber
@@ -171,11 +242,13 @@ def _read_pdf(path: Path) -> tuple[list[Page], list[str]]:
     empty = ocr_used = ocr_skipped = 0
     ocr_missing = False
     fig_used = fig_failed = fig_skipped = 0
-    with pdfplumber.open(str(path)) as pdf:
+    with pdfplumber.open(str(path)) as pdf, _FastPdf(path) as fast:
         picture_ids: list[set] = []
         drawn: list[bool] = []
         for i, p in enumerate(pdf.pages, start=1):
-            text = (p.extract_text() or "").strip()
+            text = fast.text(i - 1)
+            if text is None:  # fast reader unavailable or failed on this page
+                text = (p.extract_text() or "").strip()
             scanned = len(text) < MIN_TEXT_CHARS
             if scanned and settings.OCR_ENABLED and not ocr_missing:
                 if ocr_used >= settings.OCR_MAX_PAGES:
@@ -194,7 +267,7 @@ def _read_pdf(path: Path) -> tuple[list[Page], list[str]]:
                 empty += 1
             pages.append(Page(i, text))
             # pages without a text layer are read by OCR only; vision looks at the others
-            if scanned or not vision_available():
+            if scanned or not vision_available() or not fast.may_have_figure(i - 1):
                 picture_ids.append(set())
                 drawn.append(False)
             else:
