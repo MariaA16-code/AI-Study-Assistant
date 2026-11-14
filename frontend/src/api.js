@@ -23,8 +23,8 @@ const API_BASE = '/api'
 // PROPOSED address of the revision guide. Zainab has not confirmed it yet.
 const STUDY_GUIDE_PATH = '/study-guide/'
 
-// chat and quiz generation can take 60 s or more, so we wait up to 2 minutes
-const REQUEST_TIMEOUT_MS = 120000
+// chat and question generation can take 10 to 60 s or more, so we wait up to 3 minutes
+const REQUEST_TIMEOUT_MS = 180000
 
 const TOKEN_KEY = 'study_token'
 const USER_KEY = 'study_username'
@@ -102,7 +102,13 @@ async function request(path, options = {}, needsAuth = true) {
     }
 
     let message
-    if (ERROR_MESSAGES[data.error]) {
+    if (data.errors && typeof data.errors === 'object' && !Array.isArray(data.errors)) {
+      // a bad file in a multi-file upload: nothing was saved, and the backend names each bad file
+      const lines = Object.entries(data.errors).map(
+        ([name, problems]) => `${name}: ${[].concat(problems).join(' ')}`,
+      )
+      message = ['No files were uploaded.', ...lines].join('\n')
+    } else if (ERROR_MESSAGES[data.error]) {
       message = ERROR_MESSAGES[data.error]
     } else if (res.status === 502) {
       // a 502 without an error code comes from the dev proxy, so the backend is not running
@@ -179,16 +185,22 @@ export async function getDocuments() {
   return request('/documents/').then((data) => (Array.isArray(data) ? data : data.results || []))
 }
 
-export async function uploadDocument(file) {
+// files = the File objects the student picked (up to 10 at once)
+// the real backend answers with a list: one document per file, each starting as "processing"
+export async function uploadDocument(files) {
+  const list = Array.from(files)
+
   if (USE_MOCK) {
     await wait(500)
-    const dot = file.name.lastIndexOf('.')
-    const ext = dot === -1 ? '' : file.name.slice(dot).toLowerCase()
-    if (!ALLOWED_EXTENSIONS.includes(ext)) throw new Error('Only PDF, DOCX and TXT files are allowed.')
-    if (file.size > MAX_SIZE) throw new Error('File is too large (max 25 MB).')
+    for (const file of list) {
+      const dot = file.name.lastIndexOf('.')
+      const ext = dot === -1 ? '' : file.name.slice(dot).toLowerCase()
+      if (!ALLOWED_EXTENSIONS.includes(ext)) throw new Error(`${file.name}: Only PDF, DOCX and TXT files are allowed.`)
+      if (file.size > MAX_SIZE) throw new Error(`${file.name}: File is too large (max 25 MB).`)
+    }
 
-    const doc = {
-      id: Date.now(),
+    const docs = list.map((file, i) => ({
+      id: Date.now() + i,
       title: file.name,
       file: '',
       status: 'processing',
@@ -197,12 +209,14 @@ export async function uploadDocument(file) {
       chunks: 0,
       created_at: new Date().toISOString(),
       readyAt: Date.now() + 6000,
-    }
-    mockDocs = [doc, ...mockDocs]
-    return doc
+    }))
+    mockDocs = [...docs, ...mockDocs]
+    return docs
   }
+
+  // every file goes under the same field name: "files"
   const formData = new FormData()
-  formData.append('file', file)
+  list.forEach((file) => formData.append('files', file))
   return request('/documents/', { method: 'POST', body: formData })
 }
 

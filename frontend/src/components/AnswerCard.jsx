@@ -7,7 +7,8 @@ const TYPE_LABELS = { mcq: 'MCQ', short: 'Short', long: 'Long' }
 // One practice question on the Generate tab.
 // MCQ: the correct option, explanation and source are shown straight away.
 // Short and long: a button shows or hides the model answer and explanation.
-export default function AnswerCard({ question, number, isPdf }) {
+// fileName is only given when several files are selected.
+export default function AnswerCard({ question, number, isPdf, fileName }) {
   const [revealed, setRevealed] = useState(false) // written questions only
 
   const isMcq = question.type === 'mcq'
@@ -64,9 +65,10 @@ export default function AnswerCard({ question, number, isPdf }) {
         </div>
       )}
 
-      {showDetails && source && (source.chapter || label) && (
+      {showDetails && source && (source.chapter || label || fileName) && (
         <p className="review-source">
-          Source: {source.chapter || 'Chapter not detected'}
+          Source: {fileName ? `${fileName} — ` : ''}
+          {source.chapter || 'Chapter not detected'}
           {label ? `, ${label}` : ''}
         </p>
       )}

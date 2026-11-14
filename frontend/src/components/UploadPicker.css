@@ -1,0 +1,199 @@
+.picker {
+  margin: 20px 0 10px;
+  padding: 22px;
+  background: var(--panel, #0c1316);
+  border: 1px solid var(--border, #1c2a2f);
+  border-radius: var(--radius, 14px);
+}
+
+.picker-title {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.picker-sub {
+  margin: 0 0 16px;
+  color: var(--muted, #8b9d98);
+  font-size: 13px;
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  text-align: center;
+  border: 2px dashed var(--accent-ring, rgba(16, 185, 129, 0.38));
+  border-radius: 16px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.dropzone:hover,
+.dropzone.dragging,
+.dropzone:focus-within {
+  border-color: var(--accent, #10b981);
+  background: var(--accent-soft, rgba(16, 185, 129, 0.12));
+}
+
+.dropzone.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* the real file input stays in the page for keyboard users, but is not visible */
+.dropzone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dropzone-icon {
+  color: var(--accent, #10b981);
+}
+
+.dropzone-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text, #e9f2ef);
+}
+
+.dropzone-hint {
+  font-size: 14px;
+  color: var(--muted, #8b9d98);
+}
+
+.picker-count {
+  display: inline-block;
+  margin: 16px 0 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ok, #34d399);
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--input, #060c0f);
+  border: 1px solid var(--border, #1c2a2f);
+  border-radius: 10px;
+}
+
+.picker-item.bad {
+  border-color: rgba(242, 103, 122, 0.55);
+}
+
+.picker-mark {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--ok, #34d399);
+}
+
+.picker-item.bad .picker-mark {
+  color: var(--bad, #f2677a);
+}
+
+.picker-file {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-problem {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--bad, #f2677a);
+}
+
+.picker-size {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted, #8b9d98);
+}
+
+.picker-remove {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted, #8b9d98);
+  cursor: pointer;
+}
+
+.picker-remove:hover:not(:disabled) {
+  color: var(--bad, #f2677a);
+}
+
+.picker-note {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--warn, #f5b942);
+}
+
+.picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.picker .picker-upload {
+  width: auto;
+  padding: 10px 22px;
+}
+
+.picker-clear {
+  padding: 10px 18px;
+  background: transparent;
+  color: var(--text, #e9f2ef);
+  border: 1px solid var(--border-strong, #2a3d44);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.picker-clear:hover:not(:disabled) {
+  border-color: var(--accent, #10b981);
+}
+
+.picker-clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .picker {
+    padding: 16px;
+  }
+
+  .picker .picker-upload,
+  .picker-clear {
+    width: 100%;
+  }
+}

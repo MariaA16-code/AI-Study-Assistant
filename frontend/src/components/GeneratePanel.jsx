@@ -25,7 +25,6 @@ const ERROR_TEXT = {
   no_content: 'There is no content to make questions from.',
 }
 
-
 // extra requests to make when some questions are rejected or a request fails
 const MAX_RETRIES = 2
 
@@ -45,8 +44,9 @@ function splitMixed(n) {
 }
 
 // Ask the existing generate endpoint for `wanted` questions of one type.
+// documentIds = one id, or a list of ids (the api sends document_id or document_ids).
 // If the backend rejects some or a request fails, wait and ask again for the missing ones.
-async function fetchOfType(docId, body, type, wanted) {
+async function fetchOfType(documentIds, body, type, wanted) {
   let got = []
   const notes = []
   let errorCode = ''
@@ -58,7 +58,7 @@ async function fetchOfType(docId, body, type, wanted) {
 
     let res
     try {
-      res = await generateQuestions(docId, { ...body, question_type: type, count: wanted - got.length })
+      res = await generateQuestions(documentIds, { ...body, question_type: type, count: wanted - got.length })
     } catch (err) {
       notes.push(`${type}: ${err.message}`)
       if (canRetry) await sleep(8000)
@@ -83,8 +83,14 @@ async function fetchOfType(docId, body, type, wanted) {
   return { questions: got, notes, errorCode }
 }
 
-export default function GeneratePanel({ doc }) {
+export default function GeneratePanel({ docs }) {
   const navigate = useNavigate()
+  const ids = docs.map((d) => d.id)
+  const several = ids.length > 1
+  const firstId = ids[0]
+  // one id for one file, a list in the same order as the file list for several files
+  const target = several ? ids : firstId
+
   const [chapters, setChapters] = useState([])
   const [chapter, setChapter] = useState('')
   const [questionType, setQuestionType] = useState('mcq')
@@ -98,12 +104,20 @@ export default function GeneratePanel({ doc }) {
   // "Create Quiz" is a mode, not a real question type
   const isQuiz = questionType === 'quiz'
 
-  // load the chapter list for the dropdown (optional, so a failure is ignored)
+  const titleOf = (id) => docs.find((d) => d.id === id)?.title
+
+  // warnings like "File 2: ..." use the position in the list we sent, so show the file name instead
+  const nameFiles = (text) =>
+    String(text).replace(/File (\d+)/g, (whole, n) => docs[Number(n) - 1]?.title || whole)
+
+  // chapters belong to one file; with several files the chapter is not used
   useEffect(() => {
-    getChapters(doc.id)
+    if (several) return undefined
+    getChapters(firstId)
       .then((list) => setChapters(Array.isArray(list) ? list : []))
       .catch(() => setChapters([]))
-  }, [doc.id])
+    return undefined
+  }, [several, firstId])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -120,13 +134,13 @@ export default function GeneratePanel({ doc }) {
       question_type: isQuiz ? 'mixed' : questionType,
       difficulty,
       count: safeCount,
-      chapter: chapter || null,
+      chapter: several ? null : chapter || null,
     }
 
     try {
       if (isQuiz) {
         // quiz mode: start an attempt and open the quiz page
-        const result = await startQuiz(doc.id, body)
+        const result = await startQuiz(target, body)
 
         if (result.error) {
           setError(ERROR_TEXT[result.error] || 'Could not create the quiz.')
@@ -137,7 +151,11 @@ export default function GeneratePanel({ doc }) {
           return
         }
 
-        saveQuiz({ ...result, documentId: doc.id, title: doc.title })
+        saveQuiz({
+          ...result,
+          documentId: several ? ids.join(',') : firstId,
+          title: several ? `${docs[0].title} + ${docs.length - 1} more` : docs[0].title,
+        })
         navigate(`/quiz/${result.attempt_id}`)
         return
       }
@@ -151,7 +169,7 @@ export default function GeneratePanel({ doc }) {
 
       for (const [index, [type, wanted]] of plan.entries()) {
         if (index > 0) await sleep(5000)
-        const part = await fetchOfType(doc.id, body, type, wanted)
+        const part = await fetchOfType(target, body, type, wanted)
         list = [...list, ...part.questions]
         notes.push(...part.notes)
         if (part.errorCode && !firstCode) firstCode = part.errorCode
@@ -164,7 +182,7 @@ export default function GeneratePanel({ doc }) {
         .sort((a, b) => (order[a.q.type] ?? 3) - (order[b.q.type] ?? 3) || a.i - b.i)
         .map((x) => x.q)
 
-      const why = [...new Set(notes)].join(' | ')
+      const why = [...new Set(notes)].map(nameFiles).join(' | ')
 
       if (list.length === 0) {
         if (firstCode) setError(ERROR_TEXT[firstCode] || 'Could not create the questions.')
@@ -180,9 +198,14 @@ export default function GeneratePanel({ doc }) {
         list.forEach((q) => { if (counts[q.type] !== undefined) counts[q.type] += 1 })
         parts.push(`Mixed set: ${counts.mcq} MCQ, ${counts.short} short, ${counts.long} long.`)
       }
+      if (several && safeCount < ids.length) {
+        parts.push('You asked for fewer questions than files, so the later files got none.')
+      }
       if (list.length < safeCount) {
         parts.push(`Only ${list.length} of ${safeCount} questions passed the quality check.`)
         if (why) parts.push('Backend notes: ' + why)
+      } else if (why) {
+        parts.push('Backend notes: ' + why)
       }
       if (parts.length) setNotice(parts.join(' '))
     } catch (err) {
@@ -199,7 +222,9 @@ export default function GeneratePanel({ doc }) {
         <p className="hint">
           {isQuiz
             ? 'Quiz mode: you answer first, and the correct answers appear after you submit.'
-            : 'Questions are made from this document only, with the chapter and page shown as the source.'}
+            : several
+              ? 'Questions are made from the selected files together. The number of questions is shared between the files, and the chapter is not used.'
+              : 'Questions are made from this document only, with the chapter and page shown as the source.'}
         </p>
 
         <form onSubmit={handleSubmit}>
@@ -207,9 +232,9 @@ export default function GeneratePanel({ doc }) {
             <div className="gen-grid">
               <label className="field wide">
                 Chapter
-                <select value={chapter} onChange={(e) => setChapter(e.target.value)}>
-                  <option value="">All chapters</option>
-                  {chapters.map((c) => (
+                <select value={chapter} onChange={(e) => setChapter(e.target.value)} disabled={several}>
+                  <option value="">{several ? 'All chapters (not used with several files)' : 'All chapters'}</option>
+                  {!several && chapters.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
@@ -248,7 +273,11 @@ export default function GeneratePanel({ doc }) {
               <Spinner size={26} />
               <div>
                 <strong>{isQuiz ? 'Creating your quiz...' : 'Creating your questions...'}</strong>
-                <p>This can take from 10 seconds to a few minutes. Please keep this page open.</p>
+                <p>
+                  {several
+                    ? `Using ${ids.length} files can take a minute or more. Please keep this page open.`
+                    : 'This can take from 10 seconds to a few minutes. Please keep this page open.'}
+                </p>
               </div>
             </div>
           ) : (
@@ -263,7 +292,12 @@ export default function GeneratePanel({ doc }) {
         <div className="answers">
           <h3 className="panel-title">Practice questions ({solved.length})</h3>
           {solved.map((q, i) => (
-            <AnswerCard key={i} question={q} number={i + 1} />
+            <AnswerCard
+              key={i}
+              question={q}
+              number={i + 1}
+              fileName={several ? titleOf(q.source?.document_id) : undefined}
+            />
           ))}
         </div>
       )}
