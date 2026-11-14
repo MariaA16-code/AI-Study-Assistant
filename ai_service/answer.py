@@ -6,6 +6,7 @@ import re
 from . import settings
 from .generate import list_chapters
 from .llm import LLMError, ask_llm
+from .multi import as_ids, interleave
 from .prompts import SYSTEM_ANSWER, build_answer_prompt
 from .retrieve import retrieve, tokenize
 from .store import get_all_chunks
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 NOT_FOUND_TEXT = "I couldn't find this in the uploaded material."
 MAX_SOURCES = 3
+MAX_SOURCES_MANY = 5  # when several documents are searched at once
 
 # Text that extract.py writes for a described picture or page starts with this mark.
 FIGURE_MARK = "[Figure]"
@@ -57,13 +59,16 @@ def parse_answer(raw: str) -> dict | None:
     return data
 
 
-def _source(hit: dict) -> dict:
-    return {
+def _source(hit: dict, with_document: bool = False) -> dict:
+    source = {
         "chapter": hit["chapter"],
         "page": hit["page_start"],
         "page_end": hit["page_end"],
         "snippet": hit["text"][:300],
     }
+    if with_document:  # only when several documents are searched, so the frontend can name the file
+        source["document_id"] = hit.get("document_id")
+    return source
 
 
 def _summary_result(res: dict) -> dict:
@@ -92,39 +97,74 @@ def _figure_hits(document_id: int, question: str) -> list[dict]:
     return picked
 
 
-def _merge(first: list[dict], second: list[dict]) -> list[dict]:
+def _merge(first: list[dict], second: list[dict], limit: int | None = None) -> list[dict]:
+    if limit is None:
+        limit = settings.TOP_K + 2 * MAX_FIGURE_CHUNKS
     merged, seen = [], set()
     for h in first + second:
-        if h["chunk_index"] not in seen:
-            seen.add(h["chunk_index"])
+        key = (h.get("document_id"), h["chunk_index"])  # chunk numbers repeat in every document
+        if key not in seen:
+            seen.add(key)
             merged.append(h)
-    return merged[: settings.TOP_K + 2 * MAX_FIGURE_CHUNKS]
+    return merged[:limit]
 
 
-def answer(document_id: int, question: str) -> dict:
+def _tag(hits: list[dict], document_id: int, many: bool) -> list[dict]:
+    """Remember which document each passage came from (only needed for several documents)."""
+    if not many:
+        return hits
+    return [{**h, "document_id": document_id} for h in hits]
+
+
+def _search(ids: list, question: str, many: bool) -> tuple[list[dict], float]:
+    """Best passages for the question, and the best vector score found.
+
+    One document: the usual top-K. Several documents: each is searched, then the best
+    passages of every document are taken in turn, so no document crowds out the others.
+    """
+    if not many:
+        result = retrieve(ids[0], question, k=settings.TOP_K)
+        return result["hits"], result["best_vector_score"]
+    k = max(2, -(-(settings.TOP_K + 3) // len(ids)))  # about TOP_K + 3 passages in total
+    per_document, best = [], 0.0
+    for doc_id in ids:
+        result = retrieve(doc_id, question, k=k)
+        per_document.append(_tag(result["hits"], doc_id, many))
+        best = max(best, result["best_vector_score"])
+    return interleave(per_document), best
+
+
+def answer(document_id: int | list[int], question: str) -> dict:
+    ids = as_ids(document_id)
     question = (question or "").strip()
-    if not question:
+    if not question or not ids:
         return _not_found()
+    many = len(ids) > 1
 
     # "What is this document about?" / "Summarize chapter 3": retrieval cannot answer these.
-    overview, chapter = wants_overview(question, list_chapters(document_id))
-    if overview:
-        res = summarize(document_id, chapter)
-        if not res.get("error"):
-            return _summary_result(res)
-        if res["error"] == "llm_unavailable":
-            return _not_found(error="llm_unavailable")
-        # any other problem: fall back to the normal question path below
+    # A summary needs one document, so with several documents the normal path below is used.
+    if not many:
+        overview, chapter = wants_overview(question, list_chapters(ids[0]))
+        if overview:
+            res = summarize(ids[0], chapter)
+            if not res.get("error"):
+                return _summary_result(res)
+            if res["error"] == "llm_unavailable":
+                return _not_found(error="llm_unavailable")
+            # any other problem: fall back to the normal question path below
 
-    result = retrieve(document_id, question, k=settings.TOP_K)
-    hits = result["hits"]
+    hits, best_vector_score = _search(ids, question, many)
 
     # Questions about a picture: always show the model the figure descriptions.
-    figure_hits = _figure_hits(document_id, question) if asks_about_image(question) else []
+    figure_hits: list[dict] = []
+    if asks_about_image(question):
+        for doc_id in ids:
+            figure_hits.extend(_tag(_figure_hits(doc_id, question), doc_id, many))
     if figure_hits:
-        hits = _merge(figure_hits, hits)  # figures first; skip the MIN_SCORE cutoff
+        # figures first; skip the MIN_SCORE cutoff
+        hits = _merge(figure_hits, hits, limit=len(hits) + 2 * MAX_FIGURE_CHUNKS * len(ids))
     # Cheap guard: nothing even loosely related, so skip the LLM call.
-    elif not hits or result["best_vector_score"] < settings.MIN_SCORE:
+    elif not hits or best_vector_score < settings.MIN_SCORE:
         return _not_found()
 
     prompt = build_answer_prompt(question, hits)
@@ -153,11 +193,12 @@ def answer(document_id: int, question: str) -> dict:
             continue
         if 1 <= n <= len(hits) and n not in cited:
             cited.append(n)
-    chosen = [hits[n - 1] for n in cited][:MAX_SOURCES] or hits[:2]
+    max_sources = MAX_SOURCES_MANY if many else MAX_SOURCES
+    chosen = [hits[n - 1] for n in cited][:max_sources] or hits[:2]
     sources, seen = [], set()
     for h in chosen:
-        key = (h["chapter"], h["page_start"])
+        key = (h.get("document_id"), h["chapter"], h["page_start"])
         if key not in seen:
             seen.add(key)
-            sources.append(_source(h))
+            sources.append(_source(h, with_document=many))
     return {"answer": text, "found": True, "sources": sources}

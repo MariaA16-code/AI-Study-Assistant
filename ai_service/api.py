@@ -63,8 +63,11 @@ def process_document(document_id: int, file_path: str) -> dict:
         "warnings": list(doc.warnings),
     }
 
-def answer_question(document_id: int, question: str) -> dict:
+def answer_question(document_id: int | list[int], question: str) -> dict:
     """Answer only from the document. If nothing relevant, found=False.
+
+    Pass a list of ids to ask about several documents in one chat. Each source then also
+    has a "document_id" so the frontend can show which file it came from.
 
     Returns: {
         "answer": str,
@@ -74,7 +77,7 @@ def answer_question(document_id: int, question: str) -> dict:
         "error": "llm_unavailable" | "bad_llm_output"   # only when something broke
     }
         Overview questions ("what is this document about?", "summarize chapter 3") return a
-    summary with an extra key "mode": "summary".
+    summary with an extra key "mode": "summary" (one document only).
     """
 
     from .answer import answer
@@ -83,13 +86,16 @@ def answer_question(document_id: int, question: str) -> dict:
 
 
 def generate_questions(
-    document_id: int,
+    document_id: int | list[int],
     question_type: str,  # "mcq" | "short" | "long" | "mixed"
     difficulty: str,  # "low" | "medium" | "high"
     count: int,  # 1..20
     chapter: str | None = None,  # one of the strings from list_chapters()
 ) -> dict:
     """Generate validated questions from the document.
+
+    Pass a list of ids to generate from several documents at once: the count is shared
+    between them, `chapter` is ignored, and each item's "source" also has a "document_id".
 
     Returns: {
         "questions": [item, ...],       # can be FEWER than requested
@@ -105,8 +111,14 @@ def generate_questions(
     Raises ValueError for an invalid type, difficulty or count (validate before calling).
     """
     from .generate import generate
+    from .multi import as_ids, generate_many
 
-    return generate(document_id, question_type, difficulty, count, chapter)
+    ids = as_ids(document_id)
+    if not ids:
+        return {"questions": [], "requested": count, "warnings": [], "error": "no_content"}
+    if len(ids) > 1:
+        return generate_many(ids, question_type, difficulty, count)
+    return generate(ids[0], question_type, difficulty, count, chapter)
 
 
 def list_chapters(document_id: int) -> list[str]:
