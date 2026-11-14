@@ -29,17 +29,20 @@ def generate_limited(*args, **kwargs):
         generation_slots.release()
 
 
-def get_ready_document(document_id, user):
-    """Returns (document, error_response). Only the owner's documents."""
-    try:
-        doc = Document.objects.get(id=document_id, user=user)
-    except Document.DoesNotExist:
-        return None, Response({"detail": "Document not found."}, status=404)
-    if doc.status != "ready":
-        return None, Response(
-            {"detail": f"Document is not ready (status: {doc.status})."}, status=409
-        )
-    return doc, None
+def get_ready_documents(ids, user):
+    """Returns (documents in the same order as ids, error_response).
+    Only the owner's documents, and all of them must be ready."""
+    found = {d.id: d for d in Document.objects.filter(id__in=ids, user=user)}
+    for i in ids:
+        doc = found.get(i)
+        if doc is None:
+            return None, Response({"detail": f"Document {i} not found."}, status=404)
+        if doc.status != "ready":
+            return None, Response(
+                {"detail": f"Document {i} is not ready (status: {doc.status})."},
+                status=409,
+            )
+    return [found[i] for i in ids], None
 
 
 def public_question(index, q):
@@ -63,12 +66,14 @@ class ChatView(APIView):
         s = ChatRequestSerializer(data=request.data)
         s.is_valid(raise_exception=True)
 
-        doc, err = get_ready_document(s.validated_data["document_id"], request.user)
+        docs, err = get_ready_documents(s.validated_data["ids"], request.user)
         if err:
             return err
 
         try:
-            result = ai.answer_question(doc.id, s.validated_data["question"])
+            result = ai.answer_question(
+                [d.id for d in docs], s.validated_data["question"]
+            )
         except ValueError as e:
             return Response({"detail": str(e)}, status=400)
         except Exception:
@@ -86,13 +91,13 @@ class GenerateView(APIView):
         s.is_valid(raise_exception=True)
         data = s.validated_data
 
-        doc, err = get_ready_document(data["document_id"], request.user)
+        docs, err = get_ready_documents(data["ids"], request.user)
         if err:
             return err
 
         try:
             result = generate_limited(
-                doc.id,
+                [d.id for d in docs],
                 data["question_type"],
                 data["difficulty"],
                 data["count"],
@@ -115,13 +120,13 @@ class StartQuizView(APIView):
         s.is_valid(raise_exception=True)
         data = s.validated_data
 
-        doc, err = get_ready_document(data["document_id"], request.user)
+        docs, err = get_ready_documents(data["ids"], request.user)
         if err:
             return err
 
         try:
             result = generate_limited(
-                doc.id,
+                [d.id for d in docs],
                 data["question_type"],
                 data["difficulty"],
                 data["count"],
@@ -143,8 +148,10 @@ class StartQuizView(APIView):
                 status=422,
             )
 
+        # the attempt is linked to the first selected file;
+        # each question's source has its own document_id
         attempt = QuizAttempt.objects.create(
-            document=doc,
+            document=docs[0],
             user=request.user,
             question_type=data["question_type"],
             difficulty=data["difficulty"],
